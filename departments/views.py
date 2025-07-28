@@ -1,5 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, filters
+from rest_framework.permissions import IsAuthenticated
 from .models import Departments
 from .serializers import DepartmentSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -9,6 +10,7 @@ from .serializers import CustomTokenObtainPairSerializer
 class DepartmentsViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Departments.objects.all()
     serializer_class = DepartmentSerializer
+    permission_classes = [IsAuthenticated]  # ← Faqat JWT token bo‘lsa yetarli
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['name']
     search_fields = ['name', 'description']
@@ -21,7 +23,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
 
-        # agar status_code 200 bo‘lsa, user haqida ma’lumot qo‘shamiz
         if response.status_code == 200:
             user = self.get_user(request.data.get('username'))
             response.data['user'] = {
