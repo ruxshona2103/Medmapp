@@ -1,0 +1,12 @@
+Django~=5.2.4
+djangorestframework~=3.16.0
+asgiref==3.9.1
+drf-yasg==1.21.10
+inflection==0.5.1
+packaging==25.0
+pillow==11.3.0
+pytz==2025.2
+PyYAML==6.0.2
+sqlparse==0.5.3
+tzdata==2025.2
+uritemplate==4.2.0
