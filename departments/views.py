@@ -1,16 +1,22 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets, filters
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import viewsets, filters, permissions
 from .models import Departments
-from .serializers import DepartmentSerializer
+from .serializers import DepartmentSerializer, CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import CustomTokenObtainPairSerializer
 
 
-class DepartmentsViewSet(viewsets.ReadOnlyModelViewSet):
+
+class CustomPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.method == 'GET':
+            return True
+        return request.user and request.user.is_authenticated
+
+
+class DepartmentsViewSet(viewsets.ModelViewSet):
     queryset = Departments.objects.all()
     serializer_class = DepartmentSerializer
-    permission_classes = [IsAuthenticated]  # ← Faqat JWT token bo‘lsa yetarli
+    permission_classes = [CustomPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['name']
     search_fields = ['name', 'description']
