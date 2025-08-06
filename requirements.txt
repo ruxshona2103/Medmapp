@@ -1,12 +1,12 @@
-Django~=5.2.4
-djangorestframework~=3.16.0
-asgiref==3.9.1
-drf-yasg==1.21.10
-inflection==0.5.1
-packaging==25.0
-pillow==11.3.0
-pytz==2025.2
-PyYAML==6.0.2
-sqlparse==0.5.3
-tzdata==2025.2
-uritemplate==4.2.0
+# Django framework
+Django==4.2.13 # Python 3.11+ bilan mos keladigan versiya
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.0 # JWT autentifikatsiyasi uchun
+psycopg2-binary==2.9.9 # PostgreSQL ma'lumotlar bazasi uchun
+python-decouple==3.8 # Environment variables uchun
+drf-yasg==1.21.4 # Swagger/OpenAPI hujjatlashtirish uchun
+django-filter==23.2 # API filtrlash uchun
+django-ratelimit==4.0.0 # Rate limiting uchun (ixtiyoriy, Netlify Functionsda ham bo'lishi mumkin)
+sentry-sdk==1.40.6 # Logging/Monitoring uchun (Sentry)
+gunicorn==22.0.0 # Web server (ishlab chiqarish uchun)
+Pillow==10.2.0 # Rasmlarni yuklash uchun (agar foydalanilsa)
