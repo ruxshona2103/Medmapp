@@ -1,29 +1,20 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User
+from django.contrib.auth.admin import UserAdmin
+from .models import CustomUser
 
-
-class UserAdmin(BaseUserAdmin):
-    model = User
-    list_display = ('first_name', 'last_name', 'phone', 'role', 'is_staff')
-    search_fields = ('phone', 'first_name', 'last_name', 'email')
-
-
+class CustomUserAdmin(UserAdmin):
+    model = CustomUser
+    list_display = ('phone_number', 'full_name', 'role', 'is_active')
     fieldsets = (
-        (None, {'fields': ('phone', 'password')}),
-        ('Shaxsiy ma`lumotlar', {'fields': ('first_name', 'last_name', 'email', 'birth_date', 'gender')}),
-        ('Ruxsatlar', {'fields': ('role', 'is_active', 'is_staff', 'is_superuser')}),
-        ('Tizim haqida', {'fields': ('last_login', 'date_joined')}),
+        (None, {'fields': ('phone_number', 'password')}),
+        ('Personal Info', {'fields': ('full_name',)}),
+        ('Permissions', {'fields': ('role', 'is_active', 'is_staff', 'is_superuser')}),
     )
-
-
     add_fieldsets = (
-        (None, {
-            'classes': ('wide',),
-            'fields': ('phone', 'password1', 'password2', 'role', 'is_active')
-        }),
+        (None, {'fields': ('phone_number', 'password1', 'password2', 'role')}),
     )
-    ordering = ('-date_joined',)
+    search_fields = ('phone_number',)
+    ordering = ('phone_number',)
 
-admin.site.register(User, UserAdmin)
+admin.site.register(CustomUser, CustomUserAdmin)
 

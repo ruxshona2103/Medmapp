@@ -1,77 +1,48 @@
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.utils.translation import gettext_lazy as _
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, phone, email=None, password=None,**extra_fields):
-        if not phone:
-            raise ValueError("Telefon raqam kiritilishi shart!!!")
-        email - self.normalize_email(email)
-        user = self.model(phone=phone, email=email, **extra_fields)
+    def create_user(self, phone_number, password=None, role='user', **extra_fields):
+        if not phone_number:
+            raise ValueError("Telefon raqam kerak")
+        user = self.model(phone_number=phone_number, role=role, **extra_fields)
         user.set_password(password)
-        user.save(using=self._db)
+        user.save()
         return user
 
-    def create_superuser(self, phone, email=None, password=None, **extra_fields):
+    def create_superuser(self, phone_number, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
-        return self.create_user(phone, email, password, **extra_fields)
+        return self.create_user(phone_number, password, role='superadmin', **extra_fields)
 
-class User(AbstractBaseUser, PermissionsMixin):
-    class Gender(models.TextChoices):
-        MALE = 'male', _('Erkak')
-        FEMALE = 'female', _('Ayol')
-
-    ROLE_CHOICES = (
-        ('patient', _('Bemor')),
-        ('admin', _('Admin')),
-        ('doctor', _('shifokor')),
-        ('operator', _('Operator')),
-    )
-
-    first_name = models.CharField(max_length=150)
-    last_name = models.CharField(max_length=150)
-    phone = models.IntegerField(max_length=20, unique=True)
-    email = models.EmailField(blank=True, null=True)
-    birth_date = models.DateTimeField(null=True, blank=True)
-    gender = models.CharField(max_length=10, choices=Gender.choices)
-    role = models.CharField(max_length=25, choices=ROLE_CHOICES, default='patient')
+class CustomUser(AbstractBaseUser, PermissionsMixin):
+    ROLE_CHOICES = [
+        ('user', 'Bemor'),
+        ('clinic', 'Klinika'),
+        ('doctor', 'Shifokor'),
+        ('operator', 'Operator'),
+        ('admin', 'Admin'),
+        ('superadmin', 'Super Admin'),
+    ]
+    phone_number = models.CharField(max_length=13, unique=True)
+    full_name = models.CharField(max_length=255, blank=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='user')
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
 
-    objects = CustomUserManager()
-
-    USERNAME_FIELD = 'phone'
+    USERNAME_FIELD = 'phone_number'
     REQUIRED_FIELDS = []
 
+    objects = CustomUserManager()
 
     def __str__(self):
-        return f"{self.first_name}{self.last_name}"
+        return f"{self.phone_number} ({self.role})"
 
+class MedicalFile(models.Model):
+    user = models.ForeignKey(CustomUser, related_name='medical_files', on_delete=models.CASCADE)
+    file = models.FileField(upload_to='medical_files/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def __str__(self):
+        return f"File for {self.user.phone_number}"
