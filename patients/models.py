@@ -10,7 +10,7 @@ class PatientProfile(models.Model):
         ("Ayol", "Ayol")
     )
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    fullname = models.CharField(max_length=200)
+    fullName = models.CharField(max_length=200)
     passport = models.CharField(max_length=20)
     dob = models.DateTimeField()
     gender = models.CharField(choices=GENDER_CHOICES, max_length=10)
