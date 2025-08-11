@@ -86,8 +86,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'medmapp_db',       # bazangiz nomi
+        'USER': 'postgres',         # PostgreSQL foydalanuvchi nomi
+        'PASSWORD': 'your_password',# parol
+        'HOST': 'localhost',        # yoki server IP manzili
+        'PORT': '5432',             # standart port
     }
 }
 
