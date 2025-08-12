@@ -1,10 +1,12 @@
-from django.urls import path
-from .views import CreateApplicationView, ApplicationStatusView, ServiceListView, OrderServiceView, OrderedServicesListView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import ApplicationViewSet, ServiceViewSet, OrderedServiceViewSet
+
+router = DefaultRouter()
+router.register(r'applications', ApplicationViewSet, basename="applications")
+router.register(r'services', ServiceViewSet, basename="services")
+router.register(r'ordered-services', OrderedServiceViewSet, basename="ordered-services")
 
 urlpatterns = [
-    path('api/application/create/', CreateApplicationView.as_view(), name='application-create'),
-    path('api/application/status/', ApplicationStatusView.as_view(), name='application-status'),
-    path('api/services/', ServiceListView.as_view(), name='service-list'),
-    path('api/services/order/', OrderServiceView.as_view(), name='service-order'),
-    path('api/services/ordered/', OrderedServicesListView.as_view(), name='ordered-services-list'),
+    path('', include(router.urls)),
 ]
