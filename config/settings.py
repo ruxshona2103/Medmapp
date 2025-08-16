@@ -29,7 +29,7 @@ DEBUG = True
 ALLOWED_HOSTS = []
 
 
-AUTH_USER_MODEL = 'users.CustomUser'
+AUTH_USER_MODEL = 'authentication.CustomUser'
 
 
 # Application definition
@@ -45,10 +45,10 @@ INSTALLED_APPS = [
     'django',
     'rest_framework',
     'drf_yasg',
-    'modeltranslation',
 
     'users',
     'patients',
+    'authentication',
 ]
 
 MIDDLEWARE = [
