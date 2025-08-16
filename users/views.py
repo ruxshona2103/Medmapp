@@ -4,7 +4,7 @@ from rest_framework import generics, status, viewsets, filters, permissions
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import CustomUser, MedicalFile
+from authentication.models import CustomUser, MedicalFile
 from .serializers import (
     RegisterSerializer, LoginSerializer,
     UserSerializer, MedicalFileSerializer

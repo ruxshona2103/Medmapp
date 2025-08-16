@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, MedicalFile
+from authentication.models import CustomUser, MedicalFile
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
