@@ -50,7 +50,7 @@ class OtpService:
         """
         if dev_mode:
             otp = "123456"
-            print(f"[DEV] OTP: {otp} -> {phone}")
+            print("[DEV] OTP: {otp} -> {phone}")
             return otp
 
         # production rejimida real OTP yuboramiz
@@ -58,11 +58,11 @@ class OtpService:
         token = cls._get_token()
         payload = {
             "mobile_phone": phone,
-            "message": f"MedMap tizimiga kirish uchun kod: {otp}",
+            "message": "Kelishamiz.uz saytiga ro'yxatdan o'tish uchun tasdiqlash kodi: {otp}",
             "from": "4546"
         }
 
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": "Bearer {token}"}
         response = requests.post(cls.SMS_URL, json=payload, headers=headers)
         response.raise_for_status()
 
