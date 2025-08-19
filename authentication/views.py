@@ -1,6 +1,7 @@
+from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, viewsets, filters, generics
+from rest_framework import status, viewsets, filters, generics, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -13,10 +14,9 @@ from .serializers import (
     RegisterSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
-    LoginSerializer,
     UserSerializer,
+     LoginSerializer,
     MedicalFileSerializer,
-    LogoutSerializer, MyTokenObtainPairSerializer
 )
 from .otp_service import OtpService
 
@@ -55,7 +55,6 @@ class RegisterView(APIView):
 
 class OtpRequestView(APIView):
     permission_classes = [AllowAny]
-
     @swagger_auto_schema(request_body=OtpRequestSerializer)
     def post(self, request):
         serializer = OtpRequestSerializer(data=request.data)
@@ -65,7 +64,6 @@ class OtpRequestView(APIView):
             data,
             status=status.HTTP_200_OK
         )
-
 
 class OtpVerifyView(APIView):
     permission_classes = [AllowAny]
@@ -80,7 +78,6 @@ class OtpVerifyView(APIView):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
-
         return Response(
             {
                 "message": "**Telefon raqam tasdiqlandi!**",
@@ -91,33 +88,23 @@ class OtpVerifyView(APIView):
             status=status.HTTP_200_OK,
         )
 
-
 class LoginView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [permissions.AllowAny]
 
-    @swagger_auto_schema(request_body=LoginSerializer)
+    @swagger_auto_schema(request_body=LoginSerializer,
+                         responses={200: "Login successful, returns tokens"})
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.save()
-        return Response(data, status=status.HTTP_200_OK)
-# -------------------- LOGOUT VIEW --------------------
 
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @swagger_auto_schema(request_body=LogoutSerializer)
-    def post(self, request):
-        serializer = LogoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            refresh_token = serializer.validated_data['refresh']
-            token = RefreshToken(refresh_token)
-            token.blacklist()  # endi ishlaydi
-            return Response({"message": "Token blacklist qilindi, logout muvaffaqiyatli"}, status=status.HTTP_200_OK)
-        except TokenError:
-            return Response({"error": "Token noto‘g‘ri yoki muddati tugagan"}, status=status.HTTP_400_BAD_REQUEST)
+        user = serializer.validated_data["user"]
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "user_id": user.id,
+            "phone_number": user.phone_number
+        }, status=status.HTTP_200_OK)
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
@@ -131,7 +118,10 @@ class UserViewSet(viewsets.ModelViewSet):
 class MedicalFileUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @swagger_auto_schema(operation_description="Fayl yuklash", request_body=MedicalFileSerializer)
+    @swagger_auto_schema(
+        operation_description="Fayl yuklash",
+        request_body=MedicalFileSerializer
+    )
     def post(self, request, pk=None):
         serializer = MedicalFileSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
