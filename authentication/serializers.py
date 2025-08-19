@@ -162,5 +162,5 @@ class LoginSerializer(serializers.Serializer):
 class MedicalFileSerializer(serializers.ModelSerializer):
     class Meta:
         model = MedicalFile
-        fields = ['id', 'user', 'file', 'description', 'uploaded_at']
+        fields = ['id', 'user', 'file', 'uploaded_at']
         read_only_fields = ['id', 'uploaded_at', 'user']
