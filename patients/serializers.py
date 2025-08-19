@@ -1,17 +1,10 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
+from authentication.serializers import UserSerializer
 from .models import (
     PatientProfile, Application, Document, Service,
     OrderedService, ServiceStatusHistory
 )
 
-User = get_user_model()
-
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ("id", "username", "first_name", "last_name", "email", "is_staff")
-        read_only_fields = ("id", "is_staff")
 
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
