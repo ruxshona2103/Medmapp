@@ -41,12 +41,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework_simplejwt.token_blacklist',
 
     'django',
     'rest_framework',
     'drf_yasg',
 
-    'users',
     'patients',
     'authentication',
 ]
@@ -96,15 +96,13 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'medmapp',          # yaratgan bazangiz nomi
         'USER': 'postgres',        # foydalanuvchi nomi
-        'PASSWORD': '0000',# foydalanuvchi paroli
+        'PASSWORD': '1111',
         'HOST': 'localhost',     # yoki IP manzilingiz
         'PORT': '5432',          # default port
     }
 }
 
 
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -145,8 +143,6 @@ LANGUAGES = [
 LANGUAGE_CODE = 'en-us'
 
 LOCALE_PATHS = [BASE_DIR / 'locale']
-
-LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
 
@@ -189,5 +185,5 @@ SWAGGER_SETTINGS = {
             'description': "JWT tokenini kiriting: **Bearer <token>**",
         }
     },
-    'USE_SESSION_AUTH': False,  # Basic Auth o‘rniga JWT ishlatsin
+    'USE_SESSION_AUTH': False,
 }
