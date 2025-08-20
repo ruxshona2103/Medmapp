@@ -47,7 +47,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_yasg',
 
-    'patients',
+    "patients.apps.PatientsConfig",
     'authentication',
 ]
 
