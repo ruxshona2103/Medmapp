@@ -18,9 +18,9 @@ def create_patient_profile(sender, instance, created, **kwargs):
         PatientProfile.objects.create(
             user=instance,
             full_name=full_name,
-            passport="",          # keyinchalik update qiladi
-            dob="2000-01-01",     # vaqtincha default (agar nullable qilmasak)
-            gender="male",        # vaqtincha default
+            passport=None,
+            dob="2000-01-01",
+            gender="male",
             phone=instance.phone_number,
             email=instance.first_name.lower() + "@example.com" if instance.first_name else ""
         )
