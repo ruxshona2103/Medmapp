@@ -22,6 +22,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('patients.urls')),
     path('api/', include('authentication.urls')),
+    path('api/', include('applications.urls')),
 
 
     # Swagger UI
