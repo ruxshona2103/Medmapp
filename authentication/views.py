@@ -4,21 +4,19 @@ from rest_framework.response import Response
 from rest_framework import status, viewsets, filters, generics, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework_simplejwt.tokens import RefreshToken, TokenError
-from django.utils import timezone
-from datetime import timedelta
-from authentication.models import CustomUser, MedicalFile, OTP, PendingUser
+from rest_framework_simplejwt.tokens import RefreshToken
+from authentication.models import CustomUser, MedicalFile, PendingUser
 from .serializers import (
     RegisterSerializer,
     OtpRequestSerializer,
     OtpVerifySerializer,
     UserSerializer,
-     LoginSerializer,
+    LoginSerializer,
     MedicalFileSerializer,
 )
-from .otp_service import OtpService
+
+User = get_user_model()
 
 
 class RegisterView(APIView):
@@ -28,26 +26,12 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        validated_data = serializer.validated_data
+        pending_user = serializer.save()
 
-        phone = validated_data["phone_number"]
-        pending_user, created = PendingUser.objects.update_or_create(
-            phone_number=phone,
-            defaults={
-                "first_name": validated_data.get("first_name", ""),
-                "last_name": validated_data.get("last_name", ""),
-                "district": validated_data.get("district", ""),
-                "role": "user",
-                "expires_at": timezone.now() + timedelta(minutes=5)
-            }
-        )
-
-        otp_code = OtpService.send_otp(phone, dev_mode=True)
         return Response(
             {
-                "message": "**Ro‘yxatdan o‘tish muvaffaqiyatli!** Telefon raqamingizni tasdiqlash uchun OTP yuborildi.",
-                "phone_number": phone,
-                "otp": otp_code if True else "****"
+                "message": "Ro'yxatdan o'tish muvaffaqiyatli yakunlandi! Endi OTP so‘rashingiz mumkin.",
+                "phone_number": pending_user.phone_number,
             },
             status=status.HTTP_201_CREATED
         )
@@ -55,15 +39,14 @@ class RegisterView(APIView):
 
 class OtpRequestView(APIView):
     permission_classes = [AllowAny]
+
     @swagger_auto_schema(request_body=OtpRequestSerializer)
     def post(self, request):
         serializer = OtpRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.save()
-        return Response(
-            data,
-            status=status.HTTP_200_OK
-        )
+        return Response(data, status=status.HTTP_200_OK)
+
 
 class OtpVerifyView(APIView):
     permission_classes = [AllowAny]
@@ -76,17 +59,21 @@ class OtpVerifyView(APIView):
         serializer = OtpVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+
+        # token yaratish
         refresh = RefreshToken.for_user(user)
         access = str(refresh.access_token)
+
         return Response(
             {
-                "message": "**Telefon raqam tasdiqlandi!**",
+                "message": "Telefon raqam tasdiqlandi!",
                 "user": UserSerializer(user).data,
                 "access": access,
                 "refresh": str(refresh),
             },
             status=status.HTTP_200_OK,
         )
+
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -102,9 +89,9 @@ class LoginView(APIView):
         return Response({
             "refresh": str(refresh),
             "access": str(refresh.access_token),
-            "user_id": user.id,
-            "phone_number": user.phone_number
+            "user": UserSerializer(user).data
         }, status=status.HTTP_200_OK)
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
@@ -135,4 +122,3 @@ class MedicalFileListView(generics.ListAPIView):
     def get_queryset(self):
         user_id = self.kwargs['pk']
         return MedicalFile.objects.filter(user_id=user_id)
-
