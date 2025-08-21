@@ -1,12 +1,11 @@
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from authentication.models import CustomUser, MedicalFile, OTP, PendingUser
+from authentication.models import CustomUser, MedicalFile, PendingUser
 from config import settings
-from .otp_service import OtpService
 from django.utils import timezone
 from datetime import timedelta
+from .otp_service import OtpService
 
 User = get_user_model()
 
@@ -26,19 +25,22 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def validate_phone_number(self, value):
         if not value.startswith("+998"):
-            raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak.")
+            raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak")
+        if CustomUser.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError("Bu raqam bilan ro'yxatdan o'tilgan")
         return value
 
     def create(self, validated_data):
         phone = validated_data['phone_number']
-        pending_user, created = PendingUser.objects.update_or_create(
+        pending_user, _ = PendingUser.objects.update_or_create(
             phone_number=phone,
             defaults={
                 "first_name": validated_data.get("first_name", ""),
                 "last_name": validated_data.get("last_name", ""),
                 "district": validated_data.get("district", ""),
                 "role": "user",
-                "expires_at": timezone.now() + timedelta(minutes=5)
+                # vaqt belgisi — keyin xohlasang ishlatib, yangilab turasan
+                "expires_at": timezone.now() + timedelta(minutes=5),
             }
         )
         return pending_user
@@ -49,23 +51,15 @@ class OtpRequestSerializer(serializers.Serializer):
     def validate_phone_number(self, value):
         if not value.startswith("+998"):
             raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak.")
+        if not (PendingUser.objects.filter(phone_number=value).exists()
+                or CustomUser.objects.filter(phone_number=value).exists()):
+            raise serializers.ValidationError("Avval ro‘yxatdan o‘ting.")
         return value
 
     def create(self, validated_data):
         phone = validated_data["phone_number"]
-        expires_at = timezone.now() + timedelta(minutes=5)
-        pending_user, created = PendingUser.objects.get_or_create(
-            phone_number=phone,
-            defaults={
-                "first_name": "",
-                "last_name": "",
-                "district": "",
-                "role": "user",
-                "expires_at": expires_at
-            }
-        )
         otp_code = OtpService.send_otp(phone, dev_mode=settings.DEBUG)
-        cache.set(f"otp_{phone}", otp_code, timeout=300)
+        cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
 
         return {
             "message": "OTP muvaffaqiyatli yuborildi!",
@@ -82,59 +76,37 @@ class OtpVerifySerializer(serializers.Serializer):
         phone = attrs.get("phone_number")
         code = attrs.get("code")
         cached_code = cache.get(f"otp_{phone}")
-        if cached_code != code:
-            raise serializers.ValidationError("Noto‘g‘ri kod yoki telefon raqam.")
-        try:
-            pending_user = PendingUser.objects.get(phone_number=phone)
-        except PendingUser.DoesNotExist:
-            raise serializers.ValidationError("Noto‘g‘ri kod yoki telefon raqam.")
-        if pending_user.expires_at < timezone.now():
-            raise serializers.ValidationError("OTP muddati tugagan.")
 
-        attrs["pending_user"] = pending_user
+        if not cached_code:
+            raise serializers.ValidationError("OTP yuborilmagan yoki muddati tugagan.")
+        if cached_code != code:
+            raise serializers.ValidationError("Noto‘g‘ri kod.")
+
+        try:
+            pending = PendingUser.objects.get(phone_number=phone)
+        except PendingUser.DoesNotExist:
+            if not CustomUser.objects.filter(phone_number=phone).exists():
+                raise serializers.ValidationError("Bunday raqam uchun ro‘yxatdan o‘tish topilmadi.")
+
+        attrs["pending_user"] = pending if 'pending' in locals() else None
         return attrs
 
-    def create(self, validated_data):
-        pending_user = validated_data["pending_user"]
 
-        # Agar hali User mavjud bo‘lmasa, yaratish
+    def create(self, validated_data):
+        pending = validated_data.get("pending_user")
+        phone = pending.phone_number if pending else validated_data.get("phone_number")
+
         user, created = CustomUser.objects.get_or_create(
-            phone_number=pending_user.phone_number,
+            phone_number=phone,
             defaults={
-                "first_name": pending_user.first_name,
-                "last_name": pending_user.last_name,
-                "district": pending_user.district,
+                "first_name": (pending.first_name if pending else ""),
+                "last_name": (pending.last_name if pending else ""),
+                "district": (pending.district if pending else ""),
+                "role": (pending.role if pending else "user"),
+                "is_active": True,
             }
         )
         return user
-
-class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
-    phone_number = serializers.CharField(required=True)
-
-    def validate(self, attrs):
-        phone = attrs.get("phone_number")
-        password = attrs.get("password")
-
-        try:
-            user = CustomUser.objects.get(phone_number=phone)
-        except CustomUser.DoesNotExist:
-            raise serializers.ValidationError("Bunday telefon raqam bilan user topilmadi")
-
-        if not user.check_password(password):
-            raise serializers.ValidationError("Parol noto‘g‘ri")
-
-        refresh = self.get_token(user)
-
-        return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                "id": user.id,
-                "phone_number": user.phone_number,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-            }
-        }
 
 
 class LoginSerializer(serializers.Serializer):
@@ -144,10 +116,10 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, attrs):
         phone = attrs.get("phone_number")
         code = attrs.get("code")
+
         cached_otp = cache.get(f"otp_{phone}")
         if not cached_otp:
             raise serializers.ValidationError({"detail": "OTP muddati tugagan yoki yuborilmagan."})
-
         if code != cached_otp:
             raise serializers.ValidationError({"detail": "Noto‘g‘ri kod."})
 
@@ -158,6 +130,7 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
 
 class MedicalFileSerializer(serializers.ModelSerializer):
     class Meta:
