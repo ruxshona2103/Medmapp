@@ -9,7 +9,7 @@ class PatientProfile(models.Model):
     ]
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="patient_profile", verbose_name="Bemor")
     full_name = models.CharField(max_length=200, verbose_name="Ism-sharif")
-    passport = models.CharField(max_length=20, unique=True, verbose_name="Passport raqami")
+    passport = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Passport raqami")
     dob = models.DateTimeField(verbose_name="Tug'ilgan sana")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, verbose_name="Jinsi")
     phone = models.CharField(max_length=20,
