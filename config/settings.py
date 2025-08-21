@@ -49,6 +49,7 @@ INSTALLED_APPS = [
 
     "patients.apps.PatientsConfig",
     'authentication',
+    'applications',
 ]
 
 MIDDLEWARE = [
