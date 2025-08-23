@@ -1,8 +1,5 @@
 from rest_framework import serializers
-from .models import Application
-
-from rest_framework import serializers
-from .models import Application
+from .models import Application, Document
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
@@ -27,5 +24,13 @@ class ApplicationSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         validated_data["patient"] = request.user
         return super().create(validated_data)
+
+
+class DocumentSerializer(serializers.ModelSerializer):
+    application = serializers.PrimaryKeyRelatedField(queryset=Application.objects.all())
+    class Meta:
+        model = Document
+        fields = ["id", "application", "file", "uploaded_at"]
+        read_only_fields = ["id", "uploaded_at"]
 
 
