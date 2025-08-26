@@ -119,5 +119,11 @@ class MedicalFileListView(generics.ListAPIView):
     serializer_class = MedicalFileSerializer
 
     def get_queryset(self):
-        user_id = self.kwargs['pk']
+        if getattr(self, 'swagger_fake_view', False):
+            # Swagger schema uchun bo'sh queryset qaytarish
+            return MedicalFile.objects.none()
+
+        user_id = self.kwargs.get('pk')  # get bilan xatolikni oldini olamiz
+        if not user_id:
+            return MedicalFile.objects.none()
         return MedicalFile.objects.filter(user_id=user_id)

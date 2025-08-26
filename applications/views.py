@@ -25,38 +25,22 @@ class ApplicationStatusView(generics.RetrieveAPIView):
         return Application.objects.filter(patient=self.request.user).latest("created_at")
 
 class ApplicationViewSet(viewsets.ModelViewSet):
-    """Superadmin, Admin, Operator yoki Shifokor Applicationsni boshqarishi uchun"""
     queryset = Application.objects.all()
     serializer_class = ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            # Swagger uchun bo'sh queryset qaytarish
+            return Application.objects.none()
+        
         user = self.request.user
-        if user.role == "user":
+        if not user.is_authenticated:
+            return Application.objects.none()
+        
+        if getattr(user, 'role', None) == "user":
             return Application.objects.filter(patient=user)
         return Application.objects.all()
-
-    @action(detail=True, methods=["post"], permission_classes=[IsDoctorOrAdmin])
-    def approve(self, request, pk=None):
-        app = self.get_object()
-        app.status = Application.STATUS_APPROVED
-        app.save()
-        return Response({"status": "Tasdiqlangan", "application_id": app.application_id})
-
-    @action(detail=True, methods=["post"], permission_classes=[IsDoctorOrAdmin])
-    def reject(self, request, pk=None):
-        app = self.get_object()
-        app.status = Application.STATUS_REJECTED
-        app.save()
-        return Response({"status": "Bekor qilingan", "application_id": app.application_id})
-
-    @action(detail=True, methods=["post"], permission_classes=[IsDoctorOrAdmin])
-    def processing(self, request, pk=None):
-        app = self.get_object()
-        app.status = Application.STATUS_PROCESSING
-        app.save()
-        return Response({"status": "Ko‘rib chiqilmoqda", "application_id": app.application_id})
-
 
 class DocumentCreateView(generics.CreateAPIView):
     """Bemor hujjat yuborishi uchun"""
