@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from datetime import timedelta
 from pathlib import Path
 from django.utils.translation import gettext_lazy as _
+import dj_database_url
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,7 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
 ALLOWED_HOSTS = ['medmapp.onrender.com', '127.0.0.1', 'localhost']
 
@@ -94,15 +97,22 @@ WSGI_APPLICATION = 'config.wsgi.application'
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'medmappp',          # yaratgan bazangiz nomi
+#         'USER': 'postgres',        # foydalanuvchi nomi
+#         'PASSWORD': '0000',
+#         'HOST': 'localhost',     # yoki IP manzilingiz
+#         'PORT': '5432',          # default port
+#     }
+# }
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'medmappp',          # yaratgan bazangiz nomi
-        'USER': 'postgres',        # foydalanuvchi nomi
-        'PASSWORD': '0000',
-        'HOST': 'localhost',     # yoki IP manzilingiz
-        'PORT': '5432',          # default port
-    }
+    'default': dj_database_url.parse(
+        'postgresql://medmapp_user:6nHxciOW4JQIiGu9gMutP3Ht20fJFriD@dpg-d2n0g70gjchc73d6ojhg-a.oregon-postgres.render.com/medmapp',
+        conn_max_age=600
+    )
 }
 
 
