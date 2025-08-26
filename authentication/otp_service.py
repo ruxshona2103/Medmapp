@@ -4,17 +4,13 @@ import os
 
 
 class OtpService:
-    # Environment o'zgaruvchilaridan ma'lumotlarni oling, bu xavfsizlik uchun muhim
     LOGIN_EMAIL = os.environ.get("ESKIZ_EMAIL", "mirakovshohjahon@gmail.com")
-    # POSTMAN-dagi to'g'ri parolni o'rnating
     LOGIN_PASSWORD = os.environ.get("ESKIZ_PASSWORD", "83VFXt3C1R5Pdgeti2ZrTlEBxB6SYNREz9bV3nrr")
     LOGIN_URL = "https://notify.eskiz.uz/api/auth/login"
     SMS_URL = "https://notify.eskiz.uz/api/message/sms/send"
     FROM = "4546"
 
-    # Statik tokenni saqlash uchun o'zgaruvchi
     _token = None
-    # Tokenning amal qilish muddatini saqlash uchun o'zgaruvchi
     _token_expires_at = 0
 
     @staticmethod
@@ -24,20 +20,18 @@ class OtpService:
     @classmethod
     def _get_token(cls):
         """Tokenni olish yoki yangilash uchun ichki metod."""
-        # Agar token mavjud bo'lmasa yoki muddati tugagan bo'lsa, yangisini oling
         if not cls._token or cls._token_expires_at <= requests.models.datetime.datetime.now().timestamp():
             try:
                 login_response = requests.post(
                     cls.LOGIN_URL,
                     data={"email": cls.LOGIN_EMAIL, "password": cls.LOGIN_PASSWORD},
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=10 # So'rov vaqtini cheklash
+                    timeout=10 
                 )
                 login_response.raise_for_status()
                 response_data = login_response.json()
                 cls._token = response_data.get("data", {}).get("token")
                 
-                # Tokenning amal qilish muddatini hisoblash (24 soat)
                 cls._token_expires_at = requests.models.datetime.datetime.now().timestamp() + 23 * 60 * 60
                 
                 if not cls._token:
@@ -57,10 +51,8 @@ class OtpService:
         """Berilgan raqamga OTP yuborish. Faqat haqiqiy SMS yuboriladi."""
         otp = cls._generate_otp()
         
-        # Token olish yoki yangilash
         token = cls._get_token()
 
-        # SMS yuborish
         payload = {
             "mobile_phone": phone,
             "message": f"medmapp.uz platformasiga kirish uchun tasdiqlash kodi: {otp}",
