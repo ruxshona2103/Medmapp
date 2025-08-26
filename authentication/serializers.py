@@ -58,7 +58,7 @@ class OtpRequestSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         phone = validated_data["phone_number"]
-        otp_code = OtpService.send_otp(phone, dev_mode=settings.DEBUG)
+        otp_code = OtpService.send_otp(phone)
         cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
 
         return {
