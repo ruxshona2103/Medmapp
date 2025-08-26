@@ -43,7 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework_simplejwt.token_blacklist',
 
-    'django',
+    'corsheaders',
     'rest_framework',
     'drf_yasg',
 
@@ -53,6 +53,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.common.CommonMiddleware",
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -95,9 +97,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'medmapp',          # yaratgan bazangiz nomi
+        'NAME': 'medmappp',          # yaratgan bazangiz nomi
         'USER': 'postgres',        # foydalanuvchi nomi
-        'PASSWORD': '1111',
+        'PASSWORD': '0000',
         'HOST': 'localhost',     # yoki IP manzilingiz
         'PORT': '5432',          # default port
     }
@@ -188,3 +190,10 @@ SWAGGER_SETTINGS = {
     },
     'USE_SESSION_AUTH': False,
 }
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",   # React dev server
+    "http://127.0.0.1:3000",
+    "https://yourfrontend.com",
+]
