@@ -12,11 +12,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
-
-ALLOWED_HOSTS = ['medmapp.onrender.com', '127.0.0.1', 'localhost', 'medmapp-production.up.railway.app']
-
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "localhost",
+    "medmapp.onrender.com",
+    "medmapp-production.up.railway.app",
+]
 
 AUTH_USER_MODEL = 'authentication.CustomUser'
 
