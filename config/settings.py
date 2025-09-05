@@ -98,7 +98,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': dj_database_url.parse(
-        'postgresql://medmapp_user:6nHxciOW4JQIiGu9gMutP3Ht20fJFriD@dpg-d2n0g70gjchc73d6ojhg-a.oregon-postgres.render.com/medmapp',
+        'postgresql://neondb_owner:npg_wKJuL1Gea3tV@ep-proud-darkness-adfhzsb2-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
         conn_max_age=600
     )
 }
