@@ -130,7 +130,7 @@ REST_FRAMEWORK = {
     ),
 
 }
-
+# ok
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 MEDIA_URL = '/media/'
