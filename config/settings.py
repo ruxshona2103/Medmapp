@@ -3,6 +3,11 @@ from pathlib import Path
 from django.utils.translation import gettext_lazy as _
 import os
 import dj_database_url
+from datetime import timedelta
+from pathlib import Path
+from django.utils.translation import gettext_lazy as _
+import os
+import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -40,6 +45,7 @@ INSTALLED_APPS = [
     'applications',
     'services',
     'consultations',
+    "reviews.apps.ReviewsConfig",
 ]
 
 MIDDLEWARE = [
@@ -121,18 +127,19 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
-    ),
 
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.TokenAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.AllowAny",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
 }
 
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -179,6 +186,8 @@ SIMPLE_JWT = {
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 }
+
+
 
 SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
