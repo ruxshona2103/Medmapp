@@ -6,6 +6,7 @@ from django.shortcuts import redirect
 from rest_framework import permissions
 from django.conf import settings
 from django.conf.urls.static import static
+from config.api_docs import RoleAwareGenerator   # 👈
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -17,7 +18,7 @@ schema_view = get_schema_view(
         license=openapi.License(name="BSD License"),
     ),
     public=True,
-    permission_classes=[permissions.AllowAny],   # <<< MUHIM
+    permission_classes=[permissions.AllowAny],
 )
 
 urlpatterns = [
@@ -27,11 +28,11 @@ urlpatterns = [
 
     # app urls
     path("api/auth/", include("authentication.urls")),
-    path("api/patients/", include("patients.urls")),
     path("api/services/", include("services.urls")),
     path("api/applications/", include("applications.urls")),
     path("api/consultations/", include("consultations.urls")),
     path("api/reviews/", include("reviews.urls")),
+    path("api/patients/", include("patients.urls")),
 
     # swagger/redoc
     re_path(r"^swagger(?P<format>\.json|\.yaml)$", schema_view.without_ui(cache_timeout=0), name="schema-json"),
@@ -40,4 +41,4 @@ urlpatterns = [
 
 ]
 if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

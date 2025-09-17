@@ -1,26 +1,22 @@
+# users/signals.py
+
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.conf import settings
 from .models import PatientProfile
+from authentication.models import CustomUser
 
-
-@receiver(post_save, sender=settings.AUTH_USER_MODEL)
-def create_patient_profile(sender, instance, created, **kwargs):
-    """
-    Har bir yangi foydalanuvchi yaratilganda unga PatientProfile avtomatik qo‘shiladi.
-    """
-    if created and not hasattr(instance, "patient_profile") and instance.role == "user":
-        # F.I.Sh. yig‘ib olish
-        full_name = f"{instance.first_name or ''} {instance.last_name or ''}".strip()
-        if not full_name:
-            full_name = instance.phone_number
-
-        PatientProfile.objects.create(
+@receiver(post_save, sender=CustomUser)
+def create_patient_profile_for_user(sender, instance, created, **kwargs):
+    if created and instance.role == 'user':
+        # Yangi foydalanuvchi va role='user' bo'lsa, profil yarat
+        PatientProfile.objects.get_or_create(
             user=instance,
-            full_name=full_name,
-            passport=None,
-            dob="2000-01-01",
-            gender="male",
-            phone=instance.phone_number,
-            email=instance.first_name.lower() + "@example.com" if instance.first_name else ""
+            defaults={
+                'full_name': instance.first_name or instance.phone_number,
+                'phone': instance.phone_number,
+                'email': '',  # Ixtiyoriy, keyin to'ldiriladi
+                'dob': None,  # Keyin to'ldiriladi
+                'gender': 'male',  # Default, keyin o'zgartiriladi
+            }
         )

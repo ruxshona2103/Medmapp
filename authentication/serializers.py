@@ -39,7 +39,6 @@ class RegisterSerializer(serializers.ModelSerializer):
                 "last_name": validated_data.get("last_name", ""),
                 "district": validated_data.get("district", ""),
                 "role": "user",
-                # vaqt belgisi — keyin xohlasang ishlatib, yangilab turasan
                 "expires_at": timezone.now() + timedelta(minutes=5),
             }
         )

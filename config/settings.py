@@ -2,12 +2,9 @@ from datetime import timedelta
 from pathlib import Path
 from django.utils.translation import gettext_lazy as _
 import os
-import dj_database_url
 from datetime import timedelta
 from pathlib import Path
 from django.utils.translation import gettext_lazy as _
-import os
-import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -19,11 +16,10 @@ SECRET_KEY = 'django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_
 # SECURITY WARNING: don't run with debug turned on in production!
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
-ALLOWED_HOSTS = ['medmapp.onrender.com', "medmapp-production.up.railway.app",  '127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['medmapp.onrender.com', "medmapp-production.up.railway.app",  '127.0.0.1', 'library.localhost']
 
 
 AUTH_USER_MODEL = 'authentication.CustomUser'
-
 
 # Application definition
 
@@ -90,25 +86,25 @@ WSGI_APPLICATION = 'config.wsgi.application'
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'medmapp',
-#         'USER': 'postgres',
-#         'PASSWORD': '1111',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
-
-
 DATABASES = {
-    'default': dj_database_url.parse(
-        'postgresql://medmapp_user:6nHxciOW4JQIiGu9gMutP3Ht20fJFriD@dpg-d2n0g70gjchc73d6ojhg-a.oregon-postgres.render.com/medmapp',
-        conn_max_age=600
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'medmapp',
+        'USER': 'postgres',
+        'PASSWORD': '0000',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
 }
 
+
+# DATABASES = {
+#     'default': dj_database_url.parse(
+#         'postgresql://medmapp_user:6nHxciOW4JQIiGu9gMutP3Ht20fJFriD@dpg-d2n0g70gjchc73d6ojhg-a.oregon-postgres.render.com/medmapp',
+#         conn_max_age=600
+#     )
+# }
+#
 
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -127,14 +123,17 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.OrderingFilter",
+        "rest_framework.filters.SearchFilter",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,

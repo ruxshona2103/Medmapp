@@ -37,6 +37,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     ROLE_OPERATOR = 'operator'
     ROLE_ADMIN = 'admin'
     ROLE_SUPERADMIN = 'superadmin'
+    ROLE_PARTNER = 'partner'
 
     ROLE_CHOICES = [
         (ROLE_USER, 'Bemor'),
@@ -45,6 +46,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         (ROLE_OPERATOR, 'Operator'),
         (ROLE_ADMIN, 'Admin'),
         (ROLE_SUPERADMIN, 'Super Admin'),
+        (ROLE_PARTNER, 'Partner'),
     ]
 
     first_name = models.CharField(max_length=255, blank=True, null=True)

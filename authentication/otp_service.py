@@ -85,5 +85,4 @@ class OtpService:
     def send_otp(cls, phone: str) -> str:
         """Berilgan raqamga fake OTP qaytaradi (haqiqiy SMS yuborilmaydi)."""
         otp = cls._generate_otp()
-        print(f"✅ Fake OTP {otp} generatsiya qilindi: {phone}")
         return otp
