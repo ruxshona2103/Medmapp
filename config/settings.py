@@ -91,20 +91,20 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'medmapp',
         'USER': 'postgres',
-        'PASSWORD': '0000',
+        'PASSWORD': '1111',
         'HOST': 'localhost',
         'PORT': '5432',
     }
 }
 
-
+#
 # DATABASES = {
 #     'default': dj_database_url.parse(
 #         'postgresql://medmapp_user:6nHxciOW4JQIiGu9gMutP3Ht20fJFriD@dpg-d2n0g70gjchc73d6ojhg-a.oregon-postgres.render.com/medmapp',
 #         conn_max_age=600
 #     )
 # }
-#
+
 
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -126,9 +126,11 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+        'rest_framework.authentication.SessionAuthentication',
+
     ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
     ],
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",

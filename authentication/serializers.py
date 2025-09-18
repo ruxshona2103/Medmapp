@@ -14,6 +14,8 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'first_name', 'last_name', 'phone_number', 'district', 'role', 'is_active', 'date_joined']
+        ref_name = "AuthUserSerializer"  # <<<<<<< MUHIM: ref_name farqi
+
 
 
 class RegisterSerializer(serializers.ModelSerializer):

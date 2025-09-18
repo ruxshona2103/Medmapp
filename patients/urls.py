@@ -1,30 +1,17 @@
 # patients/urls.py
+
 from django.urls import path
-from django.conf import settings
-from django.conf.urls.static import static
-from django.urls import path
-from .views import (
-    PatientListCreateView, PatientDetailView, PatientMeView,
-    PatientMeAvatarView, PatientAvatarView,
-    ChangeStageView, PatientDocumentCreateView, PatientDocumentDeleteView,
-    ResponseLettersListView, TagListView, TagDeleteView, StageListView,
-    ContractApproveView
-)
+from . import views
 
 urlpatterns = [
-    path('', PatientListCreateView.as_view()),
-    path('<int:pk>/', PatientDetailView.as_view()),
-    path('me/', PatientMeView.as_view()),
-    path('me/avatar/', PatientMeAvatarView.as_view()),
-    path('<int:pk>/avatar/', PatientAvatarView.as_view()),
-    path('<int:patient_id>/change-stage/', ChangeStageView.as_view()),
-    path('<int:patient_id>/documents/', PatientDocumentCreateView.as_view()),
-    path('documents/<int:pk>/', PatientDocumentDeleteView.as_view()),
-    path('response-letters/', ResponseLettersListView.as_view()),
-    path('tags/', TagListView.as_view()),
-    path('tags/<int:pk>/', TagDeleteView.as_view()),
-    path('stages/', StageListView.as_view()),
-    path('contracts/<int:contract_id>/approve/', ContractApproveView.as_view()),
+    path('patients/', views.PatientListView.as_view(), name='patient-list'),
+    path('patients/create/', views.PatientCreateView.as_view(), name='patient-create'),
+    path('patients/<int:pk>/', views.PatientDetailView.as_view(), name='patient-detail'),
+    path('patients/me/', views.PatientMeView.as_view(), name='patient-me'),
+    path('patients/<int:patient_id>/change-stage/', views.ChangeStageView.as_view(), name='change-stage'),
+    path('patients/<int:patient_id>/documents/', views.PatientDocumentCreateView.as_view(), name='document-create'),
+    path('documents/<int:id>/', views.PatientDocumentDeleteView.as_view(), name='document-delete'),
+    path('stages/', views.StageListView.as_view(), name='stage-list'),
+    path('tags/', views.TagListView.as_view(), name='tag-list'),
+    path('tags/<int:pk>/', views.TagDeleteView.as_view(), name='tag-delete'),
 ]
-if settings.DEBUG:  # faqat dev rejimida
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,46 +1,15 @@
 # patients/permissions.py
-from rest_framework.permissions import BasePermission
 
-def norm_role(user) -> str:
-    raw = (getattr(user, 'role', '') or '').strip().lower()
-    phone = getattr(user, 'phone_number', '').strip()
+from rest_framework import permissions
 
-    # ✅ Telefon raqamingizni avtomatik superadmin qilish
-    if phone == '+998910184880':
-        return 'admin'
-
-    mapping = {
-        'user': 'patient',      # CustomUserdagi "user" = bemor
-        'bemor': 'patient',
-        'patient': 'patient',
-        'operator': 'operator',
-        'doctor': 'doctor',
-        'admin': 'admin',
-        'superadmin': 'admin',
-        'partner': 'partner',
-    }
-    return mapping.get(raw, raw)
-
-
-class IsOperatorOrHigher(BasePermission):
+class IsOperatorOrHigher(permissions.BasePermission):
     def has_permission(self, request, view):
-        return norm_role(request.user) in ('operator', 'admin', 'doctor')
+        return request.user.role in ['operator', 'admin', 'superadmin']
 
-
-class IsOwnerOrOperator(BasePermission):
+class IsOwnerOrOperator(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
-        r = norm_role(request.user)
-        if r in ('admin', 'operator'):
+        if request.user.role in ['admin', 'superadmin']:
             return True
-        if hasattr(obj, 'user_id') and obj.user_id == getattr(request.user, 'id', None):
+        if request.user.role == 'operator' and obj.created_by == request.user:
             return True
         return False
-
-
-class IsContractOwnerOrAdmin(BasePermission):
-    def has_object_permission(self, request, view, obj):
-        r = norm_role(request.user)
-        if r in ('admin', 'operator'):
-            return True
-        prof = getattr(obj, 'patient_profile', None)
-        return bool(prof and prof.user_id == getattr(request.user, 'id', None))
