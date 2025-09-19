@@ -6,6 +6,8 @@ from config import settings
 from django.utils import timezone
 from datetime import timedelta
 from .otp_service import OtpService
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import AuthenticationFailed
 
 User = get_user_model()
 
@@ -138,3 +140,62 @@ class MedicalFileSerializer(serializers.ModelSerializer):
         model = MedicalFile
         fields = ['id', 'user', 'file', 'uploaded_at']
         read_only_fields = ['id', 'uploaded_at', 'user']
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Telefon + parol orqali JWT olish.
+    Token ichiga role, phone_number va full_name qo‘shamiz.
+    """
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        # Qo‘shimcha claimlar
+        token['role'] = user.role
+        token['phone_number'] = user.phone_number
+        token['full_name'] = user.get_full_name()
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # User haqida qo‘shimcha info response’da qaytsin
+        data['user'] = {
+            "id": self.user.id,
+            "phone_number": self.user.phone_number,
+            "role": self.user.role,
+            "first_name": self.user.first_name,
+            "last_name": self.user.last_name,
+        }
+        return data
+
+
+class OperatorLoginSerializer(TokenObtainPairSerializer):
+    """
+    Faqat operator foydalanuvchilarga JWT token beradi.
+    """
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['role'] = user.role
+        token['phone_number'] = user.phone_number
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+
+        # faqat operator login qila oladi
+        if getattr(self.user, "role", None) != "operator":
+            raise AuthenticationFailed("Faqat operator login qila oladi.")
+
+        # user haqida qo'shimcha info qaytarib beramiz
+        data['user'] = {
+            "id": self.user.id,
+            "phone_number": self.user.phone_number,
+            "role": self.user.role,
+            "first_name": self.user.first_name,
+            "last_name": self.user.last_name,
+        }
+        return data

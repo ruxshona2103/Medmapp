@@ -5,7 +5,10 @@ from rest_framework import status, viewsets, filters, generics, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_yasg.utils import swagger_auto_schema
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView  # ✅
+from rest_framework_simplejwt.tokens import RefreshToken  # agar kerak bo‘lsa ✅
+from rest_framework_simplejwt.tokens import RefreshToken  # ✅ to‘g‘ri joyi
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView  # ✅ to‘g‘ri
 from authentication.models import CustomUser, MedicalFile, PendingUser
 from .serializers import (
     RegisterSerializer,
@@ -127,3 +130,23 @@ class MedicalFileListView(generics.ListAPIView):
         if not user_id:
             return MedicalFile.objects.none()
         return MedicalFile.objects.filter(user_id=user_id)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+
+# authentication/views.py
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .serializers import OperatorLoginSerializer
+
+class OperatorLoginView(TokenObtainPairView):
+    """
+    Operator login view: phone_number + password
+    """
+    serializer_class = OperatorLoginSerializer
+
+
+class OperatorTokenRefreshView(TokenRefreshView):
+    """
+    Refresh token orqali yangi access token olish
+    """
+    pass

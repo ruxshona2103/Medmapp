@@ -31,13 +31,14 @@ class CustomUserManager(BaseUserManager):
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    ROLE_USER = 'user'
+    ROLE_USER = 'patient'
     ROLE_CLINIC = 'clinic'
     ROLE_DOCTOR = 'doctor'
     ROLE_OPERATOR = 'operator'
     ROLE_ADMIN = 'admin'
     ROLE_SUPERADMIN = 'superadmin'
     ROLE_PARTNER = 'partner'
+    USERNAME_FIELD = 'phone_number'
 
     ROLE_CHOICES = [
         (ROLE_USER, 'Bemor'),
@@ -66,6 +67,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+
+    def get_full_name(self):
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        return full_name if full_name else self.phone_number
 
     def __str__(self):
         return f"{self.phone_number} ({self.role})"

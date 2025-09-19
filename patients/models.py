@@ -1,15 +1,14 @@
-# patients/models.py
-
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.core.validators import RegexValidator, EmailValidator
+from django.core.validators import RegexValidator
 
 User = get_user_model()
 
 
 class Stage(models.Model):
+    """Bemorning jarayon bosqichlari (masalan: Qabul, Tekshiruv, Operatsiya)."""
     title = models.CharField(max_length=50)
-    code_name = models.CharField(max_length=20, unique=True)  # new, response_letters, documents
+    code_name = models.CharField(max_length=20, unique=True)
     order = models.PositiveIntegerField(default=0)
     color = models.CharField(max_length=20, default="primary")
 
@@ -21,6 +20,7 @@ class Stage(models.Model):
 
 
 class Tag(models.Model):
+    """Bemorlar uchun teglar (masalan: VIP, Qarzdor, Tezkor)."""
     name = models.CharField(max_length=20)
     color = models.CharField(max_length=20, default="primary")
 
@@ -28,10 +28,39 @@ class Tag(models.Model):
         return self.name
 
 
+class PatientProfile(models.Model):
+    """Foydalanuvchi bilan bog‘langan asosiy bemor profili (OneToOne)."""
+    GENDER_CHOICES = [("male", "Erkak"), ("female", "Ayol")]
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='patient_profile',
+        verbose_name="Foydalanuvchi"
+    )
+    passport = models.CharField(max_length=20, null=True, blank=True)
+    dob = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default="male")
+    complaints = models.TextField(blank=True, default="")
+    previous_diagnosis = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Bemor Profili"
+
+    def __str__(self):
+        return f"{self.user.get_full_name() or self.user.username} ({self.passport or 'Passportsiz'})"
+
+
 class Patient(models.Model):
-    """
-    Bemor (kanban, holat, teg, tarix, hujjatlar)
-    """
+    """Jarayon bo‘yicha bemor yozuvi (Stage, Tag bilan)."""
+    profile = models.OneToOneField(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name='patient_record',
+        null=True,
+        blank=True,
+        verbose_name="Bemor profili"
+    )
     full_name = models.CharField(max_length=200)
     phone = models.CharField(
         max_length=20,
@@ -50,38 +79,21 @@ class Patient(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Bemor"
-        verbose_name_plural = "Bemorlar"
+        verbose_name = "Bemor (Jarayon)"
+        verbose_name_plural = "Bemorlar (Jarayon)"
         ordering = ["-created_at"]
 
     def __str__(self):
         return self.full_name
 
-
-class PatientProfile(models.Model):
-    """
-    Shaxsiy ma'lumotlar (passport, tug'ilgan sana, jinsi)
-    """
-    GENDER_CHOICES = [("male", "Erkak"), ("female", "Ayol")]
-
-    patient = models.OneToOneField(Patient, on_delete=models.CASCADE, related_name="profile")
-    passport = models.CharField(max_length=20, unique=True, null=True, blank=True)
-    dob = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
-    complaints = models.TextField(blank=True)
-    previous_diagnosis = models.TextField(blank=True)
-
-    class Meta:
-        verbose_name = "Bemor Profili"
-
-    def __str__(self):
-        return f"{self.patient.full_name} - {self.passport}"
+    def save(self, *args, **kwargs):
+        if not self.full_name and self.profile and self.profile.user:
+            self.full_name = self.profile.user.get_full_name() or self.profile.user.phone_number
+        super().save(*args, **kwargs)
 
 
 class PatientHistory(models.Model):
-    """
-    O'zgarishlar tarixi
-    """
+    """Bemor jarayonining tarixini yozib borish (kim o‘zgartirdi, nima dedi)."""
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="history")
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="patient_history")
     comment = models.TextField()
@@ -90,15 +102,14 @@ class PatientHistory(models.Model):
     class Meta:
         verbose_name = "Tarix"
         verbose_name_plural = "Tarixlar"
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.patient.full_name} - {self.comment[:30]}"
 
 
 class PatientDocument(models.Model):
-    """
-    Hujjatlar
-    """
+    """Bemor hujjatlari (fayllar)."""
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="documents")
     file = models.FileField(upload_to="patient_documents/")
     description = models.CharField(max_length=200, blank=True)
@@ -113,6 +124,10 @@ class PatientDocument(models.Model):
     class Meta:
         verbose_name = "Hujjat"
         verbose_name_plural = "Hujjatlar"
+        ordering = ['-uploaded_at']
 
     def __str__(self):
         return f"{self.patient.full_name} - {self.file.name}"
+
+    def get_source_type_display(self):
+        return dict(self._meta.get_field('source_type').choices).get(self.source_type, self.source_type)

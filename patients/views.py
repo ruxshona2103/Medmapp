@@ -1,8 +1,5 @@
-# patients/views.py
-
 import logging
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,36 +10,62 @@ from django.contrib.auth import get_user_model
 from .models import Patient, PatientProfile, Stage, Tag, PatientHistory, PatientDocument
 from .serializers import (
     PatientSerializer,
-    PatientDetailSerializer,
-    PatientCreateSerializer,
+    PatientProfileSerializer,
     StageSerializer,
     TagSerializer,
-    PatientHistorySerializer,
     PatientDocumentSerializer,
-    PatientProfileSerializer
+    UserSerializer,
 )
-from .permissions import IsOperatorOrHigher, IsOwnerOrOperator
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+# ==========================================
+# Helper funksiyalar
+# ==========================================
 def _is_swagger(view) -> bool:
-    """Swagger yoki oddiy requestni aniqlash"""
+    """Swagger schema generatsiya paytida queryset ishlamasligi uchun."""
     return getattr(view, 'swagger_fake_view', False)
 
 
-def _norm_role(u):
-    role = getattr(u, 'role', '').lower()
+def _norm_role(user):
+    """User rolini normalize qilish: 'user' -> 'patient'."""
+    if not hasattr(user, 'role'):
+        return 'anonymous'
+    role = getattr(user, 'role', '').lower()
     return 'patient' if role == 'user' else role
 
 
-# ================================
-# 1) Bemorlar ro'yxati (GET /patients/)
-# ================================
+# ==========================================
+# 1) Barcha PatientProfile lar ro‘yxati
+# ==========================================
+class PatientProfileListView(generics.ListAPIView):
+    serializer_class = PatientProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+
+    def get_queryset(self):
+        if _is_swagger(self) or not self.request.user.is_authenticated:
+            return PatientProfile.objects.none()
+
+        user = self.request.user
+        role = _norm_role(user)
+
+        base = PatientProfile.objects.select_related('user').prefetch_related(
+            'patient_record__documents',
+            'patient_record__history'
+        )
+
+        return base.filter(user=user) if role == 'patient' else base
+
+
+# ==========================================
+# 2) Barcha Patient lar ro‘yxati
+# ==========================================
 class PatientListView(generics.ListAPIView):
     serializer_class = PatientSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOperatorOrHigher]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['stage', 'tag', 'created_by']
 
@@ -53,182 +76,194 @@ class PatientListView(generics.ListAPIView):
         user = self.request.user
         role = _norm_role(user)
 
-        base = Patient.objects.select_related('stage', 'tag').prefetch_related('profile')
+        base = Patient.objects.select_related(
+            'stage', 'tag', 'profile__user', 'created_by'
+        ).prefetch_related('documents', 'history')
 
-        if role == 'operator':
-            return base.filter(created_by=user)
-        if role in ('admin', 'doctor', 'superadmin'):
-            return base
-
-        raise PermissionDenied("Sizda bu sahifaga kirish huquqi yo'q.")
+        return base.filter(profile__user=user) if role == 'patient' else base
 
 
-# ================================
-# 2) Yangi bemor yaratish (POST /patients/create/)
-# ================================
+# ==========================================
+# 3) Yangi Patient yaratish
+# ==========================================
 class PatientCreateView(generics.CreateAPIView):
-    serializer_class = PatientCreateSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOperatorOrHigher]
+    serializer_class = PatientSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        patient = serializer.save(created_by=self.request.user)
-        PatientHistory.objects.create(
-            patient=patient,
-            author=self.request.user,
-            comment="Bemor profili tizimga qo'shildi"
-        )
-        logger.info(f"Bemor yaratildi: {patient.full_name}")
-
-
-# ================================
-# 3) Bitta bemorni olish (GET /patients/{id}/)
-# ================================
-class PatientDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = PatientDetailSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrOperator]
-
-    def get_queryset(self):
-        if _is_swagger(self) or not self.request.user.is_authenticated:
-            return Patient.objects.none()
-
         user = self.request.user
         role = _norm_role(user)
 
-        base = Patient.objects.select_related('stage', 'tag', 'profile') \
-            .prefetch_related('history', 'documents')
+        patient = serializer.save(created_by=user)
 
-        if role == 'operator':
-            return base.filter(created_by=user)
-        return base
+        if role == 'patient':
+            try:
+                profile = user.patient_profile
+                patient.profile = profile
+                patient.full_name = user.get_full_name() or user.phone_number
+                patient.phone = user.phone_number
+                patient.email = user.email
+                patient.save()
+            except PatientProfile.DoesNotExist:
+                raise NotFound("Sizda bemor profili mavjud emas.")
+
+        PatientHistory.objects.create(
+            patient=patient,
+            author=user,
+            comment="Bemor jarayoni tizimga qo'shildi"
+        )
+        logger.info(f"Bemor jarayoni yaratildi: {patient.full_name}")
 
 
-# ================================
-# 4) Bemor o'z profilini ko'radi (GET /patients/me/)
-# ================================
+# ==========================================
+# 4) Bemor o‘z profilingini ko‘rish
+# ==========================================
 class PatientMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        if _is_swagger(self):
+            return Response({})
+
         user = request.user
         if _norm_role(user) != 'patient':
             raise PermissionDenied("Faqat bemorlar uchun.")
 
-        try:
-            profile = PatientProfile.objects.get(patient__user=user)
-        except PatientProfile.DoesNotExist:
-            raise NotFound("Sizning bemor profilingiz topilmadi.")
+        profile = get_object_or_404(
+            PatientProfile.objects.select_related('user').prefetch_related(
+                'patient_record__documents',
+                'patient_record__history'
+            ),
+            user=user
+        )
+        return Response(PatientProfileSerializer(profile, context={"request": request}).data)
 
-        serializer = PatientProfileSerializer(profile, context={"request": request})
-        return Response(serializer.data)
+
+# ==========================================
+# 5) Operator o‘z profilingini ko‘rish
+# ==========================================
+class OperatorMeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if _is_swagger(self):
+            return Response({})
+
+        user = request.user
+        if _norm_role(user) != 'operator':
+            raise PermissionDenied("Faqat operatorlar uchun.")
+
+        return Response(UserSerializer(user, context={"request": request}).data)
 
 
-# ================================
-# 5) Bosqichni o'zgartirish (PATCH /patients/{id}/change-stage/)
-# ================================
+# ==========================================
+# 6) Bemor bosqichini o‘zgartirish
+# ==========================================
 class ChangeStageView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrOperator]
+    permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, patient_id):
+        if _is_swagger(self):
+            return Response({})
+
         patient = get_object_or_404(Patient, id=patient_id)
-        self.check_object_permissions(request, patient)
+        user = request.user
+
+        if _norm_role(user) == 'patient':
+            raise PermissionDenied("Bemorlar bosqichni o‘zgartira olmaydi.")
 
         new_stage_id = request.data.get('new_stage_id')
         if not new_stage_id:
             return Response({"error": "'new_stage_id' majburiy."}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            new_stage = Stage.objects.get(id=new_stage_id)
-        except Stage.DoesNotExist:
-            return Response({"error": "Bosqich topilmadi."}, status=status.HTTP_404_NOT_FOUND)
+        new_stage = get_object_or_404(Stage, id=new_stage_id)
 
         old_stage = patient.stage
         patient.stage = new_stage
         patient.save(update_fields=['stage'])
 
-        comment = request.data.get('comment') or f"Bosqich: {old_stage.title if old_stage else '—'} → {new_stage.title}"
-        PatientHistory.objects.create(
-            patient=patient,
-            author=request.user,
-            comment=comment
+        comment = request.data.get(
+            'comment',
+            f"Bosqich o‘zgartirildi: {getattr(old_stage, 'title', '—')} → {new_stage.title}"
         )
+        PatientHistory.objects.create(patient=patient, author=user, comment=comment)
 
-        return Response({"success": True}, status=status.HTTP_200_OK)
+        return Response({"success": True, "new_stage": new_stage.title}, status=status.HTTP_200_OK)
 
 
-# ================================
-# 6) Hujjat yuklash (POST /patients/{id}/documents/)
-# ================================
+# ==========================================
+# 7) Hujjat yuklash
+# ==========================================
 class PatientDocumentCreateView(generics.CreateAPIView):
-    queryset = PatientDocument.objects.all()
     serializer_class = PatientDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrOperator]
+    permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        patient = get_object_or_404(Patient, id=self.kwargs['patient_id'])
-        self.check_object_permissions(self.request, patient)
+        patient_id = self.kwargs.get('patient_id')
+        patient = get_object_or_404(Patient, id=patient_id)
+        user = self.request.user
+        role = _norm_role(user)
 
-        source_type = _norm_role(self.request.user)
-        serializer.save(
-            patient=patient,
-            uploaded_by=self.request.user,
-            source_type=source_type
-        )
+        if role == 'patient' and patient.profile.user != user:
+            raise PermissionDenied("Siz faqat o‘zingiz uchun hujjat yuklay olasiz.")
+
+        source_type = role if role in ['operator', 'patient', 'partner'] else 'operator'
+
+        serializer.save(patient=patient, uploaded_by=user, source_type=source_type)
 
 
-# ================================
-# 7) Hujjatni o'chirish (DELETE /documents/{id}/)
-# ================================
+# ==========================================
+# 8) Hujjatni o‘chirish
+# ==========================================
 class PatientDocumentDeleteView(generics.DestroyAPIView):
-    queryset = PatientDocument.objects.all()
     serializer_class = PatientDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrOperator]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if _is_swagger(self):
+            return PatientDocument.objects.none()
+        return PatientDocument.objects.all()
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        self.check_object_permissions(request, instance)
+        user = request.user
+        role = _norm_role(user)
 
-        if instance.uploaded_by != request.user:
-            raise PermissionDenied("Siz faqat o'zingiz yuklagan hujjatlarni o'chira olasiz.")
+        if role == 'patient' and instance.patient.profile.user != user:
+            raise PermissionDenied("Siz faqat o‘zingiz yuklagan hujjatlarni o‘chira olasiz.")
+        if role == 'operator' and instance.uploaded_by != user:
+            raise PermissionDenied("Siz faqat o‘zingiz yuklagan hujjatlarni o‘chira olasiz.")
 
         filename = instance.file.name if instance.file else "unknown"
         self.perform_destroy(instance)
-        logger.info(f"Hujjat o'chirildi: {filename}")
+        logger.info(f"Hujjat o‘chirildi: {filename}")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# ================================
-# 8) Bosqichlar (GET /stages/, POST /stages/)
-# ================================
+# ==========================================
+# 9) Bosqichlar (CRUD)
+# ==========================================
 class StageListView(generics.ListCreateAPIView):
-    """
-    GET: Barcha bosqichlar
-    POST: Operator yoki admin yangi bosqich qo'sha oladi
-    """
     queryset = Stage.objects.order_by('order')
     serializer_class = StageSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOperatorOrHigher]
-
-    def post(self, request, *args, **kwargs):
-        if _norm_role(request.user) not in ['operator', 'admin']:
-            raise PermissionDenied("Faqat operator yoki admin bosqich qo'sha oladi.")
-        return super().post(request, *args, **kwargs)
+    permission_classes = [permissions.IsAuthenticated]
 
 
-# ================================
-# 9) Teglar (GET /tags/, POST /tags/, DELETE /tags/{id}/)
-# ================================
+# ==========================================
+# 10) Teglar (CRUD)
+# ==========================================
 class TagListView(generics.ListCreateAPIView):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOperatorOrHigher]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class TagDeleteView(generics.DestroyAPIView):
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOperatorOrHigher]
+    permission_classes = [permissions.IsAuthenticated]
 
     def destroy(self, request, *args, **kwargs):
         if _norm_role(request.user) not in ['admin', 'operator']:
-            raise PermissionDenied("Faqat admin yoki operator teg o'chira oladi.")
+            raise PermissionDenied("Faqat admin yoki operator tegni o‘chira oladi.")
         return super().destroy(request, *args, **kwargs)
