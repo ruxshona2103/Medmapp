@@ -86,24 +86,24 @@ WSGI_APPLICATION = 'config.wsgi.application'
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'medmapp',
-        'USER': 'postgres',
-        'PASSWORD': '1111',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
-}
-
-#
 # DATABASES = {
-#     'default': dj_database_url.parse(
-#         'postgresql://medmapp_user:6nHxciOW4JQIiGu9gMutP3Ht20fJFriD@dpg-d2n0g70gjchc73d6ojhg-a.oregon-postgres.render.com/medmapp',
-#         conn_max_age=600
-#     )
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'medmapp',
+#         'USER': 'postgres',
+#         'PASSWORD': '1111',
+#         'HOST': 'localhost',
+#         'PORT': '5432',
+#     }
 # }
+
+
+DATABASES = {
+    'default': dj_database_url.parse(
+        'postgresql://postgres:pCeNRcDTRMtpPxeSjMXsRIXRSSOmNjdA@shortline.proxy.rlwy.net:52400/railway',
+        conn_max_age=600
+    )
+}
 
 
 
