@@ -13,18 +13,20 @@ def create_patient_profile(sender, instance, created, **kwargs):
     """
     Agar foydalanuvchi ro'yxatdan o'tsa va roli 'user' yoki 'patient' bo'lsa — unga PatientProfile yaratiladi.
     """
-    if created and getattr(instance, 'role', '').lower() in ['user', 'patient']:
+    if created and getattr(instance, "role", "").lower() in ["user", "patient"]:
+        full_name = f"{instance.first_name or ''} {instance.last_name or ''}".strip()
         PatientProfile.objects.create(
             user=instance,
             passport=None,
+            full_name=full_name,
             dob=None,
             gender="male",
             complaints="",
-            previous_diagnosis=""
+            previous_diagnosis="",
         )
 
 
 @receiver(post_save, sender=User)
 def save_patient_profile(sender, instance, **kwargs):
-    if hasattr(instance, 'patient_profile'):
+    if hasattr(instance, "patient_profile"):
         instance.patient_profile.save()

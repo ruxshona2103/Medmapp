@@ -5,6 +5,7 @@ from .views import (
     PatientCreateView,
     PatientMeView,
     OperatorMeView,
+    PatientAvatarUpdateView,
     ChangeStageView,
     PatientDocumentCreateView,
     PatientDocumentDeleteView,
@@ -19,17 +20,24 @@ urlpatterns = [
     path("", PatientListView.as_view(), name="patient-list"),
     path("create/", PatientCreateView.as_view(), name="patient-create"),
     path("me/", PatientMeView.as_view(), name="patient-me"),
-
     # Operator
     path("operators/me/", OperatorMeView.as_view(), name="operator-me"),
-
+    path("me/avatar/", PatientAvatarUpdateView.as_view(), name="patient-avatar-update"),
     # Bosqich
-    path("<int:patient_id>/change-stage/", ChangeStageView.as_view(), name="change-stage"),
-
+    path(
+        "<int:patient_id>/change-stage/", ChangeStageView.as_view(), name="change-stage"
+    ),
     # Hujjatlar
-    path("<int:patient_id>/documents/", PatientDocumentCreateView.as_view(), name="patient-document-create"),
-    path("documents/<int:pk>/", PatientDocumentDeleteView.as_view(), name="patient-document-delete"),
-
+    path(
+        "<int:patient_id>/documents/",
+        PatientDocumentCreateView.as_view(),
+        name="patient-document-create",
+    ),
+    path(
+        "documents/<int:pk>/",
+        PatientDocumentDeleteView.as_view(),
+        name="patient-document-delete",
+    ),
     # Stage va Tag
     path("stages/", StageListView.as_view(), name="stage-list"),
     path("tags/", TagListView.as_view(), name="tag-list"),

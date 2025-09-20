@@ -98,16 +98,22 @@ class Message(models.Model):
 # ---------- Fayllar ----------
 def chat_upload_path(instance: "Attachment", filename: str) -> str:
     # media/chat_attachments/2025/09/05/<id>_filename.ext
-    return f"chat_attachments/{timezone.now():%Y/%m/%d}/{instance.message_id}_{filename}"
+    return (
+        f"chat_attachments/{timezone.now():%Y/%m/%d}/{instance.message_id}_{filename}"
+    )
 
 
 class Attachment(models.Model):
-    message = models.ForeignKey("Message", on_delete=models.CASCADE, related_name="attachments")
+    message = models.ForeignKey(
+        "Message", on_delete=models.CASCADE, related_name="attachments"
+    )
     file = models.FileField(upload_to=chat_upload_path)
     mime_type = models.CharField(max_length=100, blank=True)
     size = models.PositiveBigIntegerField(default=0)
     original_name = models.CharField(max_length=255, blank=True)
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="chat_files")
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="chat_files"
+    )
     uploaded_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -116,7 +122,9 @@ class Attachment(models.Model):
     def save(self, *args, **kwargs):
         # Fayldan metadata
         if self.file and not self.original_name:
-            self.original_name = os.path.basename(getattr(self.file, "name", "")) or self.original_name
+            self.original_name = (
+                os.path.basename(getattr(self.file, "name", "")) or self.original_name
+            )
         if self.file and getattr(self.file, "size", None):
             self.size = self.file.size
         if not self.mime_type:
@@ -150,7 +158,9 @@ class DoctorSummary(models.Model):
     conversation = models.OneToOneField(
         Conversation, on_delete=models.CASCADE, related_name="summary"
     )
-    diagnosis = models.TextField(blank=True, help_text="Masalan: O'RVI, astenik sindrom")
+    diagnosis = models.TextField(
+        blank=True, help_text="Masalan: O'RVI, astenik sindrom"
+    )
     recommendations = models.TextField(
         blank=True,
         help_text="Har satrda bitta tavsiya. UI ro‘yxatga ajratadi.",
@@ -176,10 +186,12 @@ class Prescription(models.Model):
     created_by = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="prescriptions_authored"
     )
-    name = models.CharField(max_length=255)                 # Paratsetamol 500mg
-    instruction = models.TextField(blank=True)              # 1 tabletka ×3, ovqatdan so'ng
-    duration_days = models.PositiveIntegerField(null=True, blank=True)  # 7 kun, 10 kun...
-    notes = models.TextField(blank=True)                    # “Ehtiyojga qarab” va h.k.
+    name = models.CharField(max_length=255)  # Paratsetamol 500mg
+    instruction = models.TextField(blank=True)  # 1 tabletka ×3, ovqatdan so'ng
+    duration_days = models.PositiveIntegerField(
+        null=True, blank=True
+    )  # 7 kun, 10 kun...
+    notes = models.TextField(blank=True)  # “Ehtiyojga qarab” va h.k.
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

@@ -1,8 +1,18 @@
+# consultations/urls.py
+
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ConversationViewSet, MessageViewSet
+from . import views
 
 router = DefaultRouter()
-router.register(r"conversations", ConversationViewSet, basename="conversation")
-router.register(r"messages", MessageViewSet, basename="message")  # retrieve/update/delete
+router.register(r"conversations", views.ConversationViewSet)
+router.register(r"summaries", views.DoctorSummaryViewSet)
+router.register(r"prescriptions", views.PrescriptionViewSet)
 
-urlpatterns = router.urls
+# XATOLIK BO'LGAN QATORGA 'basename' QO'SHILDI
+router.register(r"messages", views.MessageViewSet, basename="message")
+
+
+urlpatterns = [
+    path("", include(router.urls)),
+]
