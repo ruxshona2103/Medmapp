@@ -5,7 +5,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
-# import dj_database_url
+import dj_database_url
 from django.utils.translation import gettext_lazy as _
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -92,24 +92,24 @@ WSGI_APPLICATION = "config.wsgi.application"
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "medmapp",
-        "USER": "postgres",
-        "PASSWORD": "1111",
-        "HOST": "localhost",
-        "PORT": "5432",
-    }
-}
-
-
 # DATABASES = {
-#     'default': dj_database_url.parse(
-#         'postgresql://postgres:pCeNRcDTRMtpPxeSjMXsRIXRSSOmNjdA@shortline.proxy.rlwy.net:52400/railway',
-#         conn_max_age=600
-#     )
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": "medmapp",
+#         "USER": "postgres",
+#         "PASSWORD": "1111",
+#         "HOST": "localhost",
+#         "PORT": "5432",
+#     }
 # }
+
+
+DATABASES = {
+    'default': dj_database_url.parse(
+        'postgresql://postgres:pCeNRcDTRMtpPxeSjMXsRIXRSSOmNjdA@shortline.proxy.rlwy.net:52400/railway',
+        conn_max_age=600
+    )
+}
 
 
 AUTH_PASSWORD_VALIDATORS = [
