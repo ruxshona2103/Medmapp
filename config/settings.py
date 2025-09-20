@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "drf_yasg",
+    "phonenumber_field",
     "patients.apps.PatientsConfig",
     "authentication",
     "applications",
@@ -105,9 +106,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 
 DATABASES = {
-    'default': dj_database_url.parse(
-        'postgresql://postgres:pCeNRcDTRMtpPxeSjMXsRIXRSSOmNjdA@shortline.proxy.rlwy.net:52400/railway',
-        conn_max_age=600
+    "default": dj_database_url.parse(
+        "postgresql://postgres:pCeNRcDTRMtpPxeSjMXsRIXRSSOmNjdA@shortline.proxy.rlwy.net:52400/railway",
+        conn_max_age=600,
     )
 }
 
