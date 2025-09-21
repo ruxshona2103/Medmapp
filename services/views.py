@@ -1,3 +1,6 @@
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import generics, permissions, viewsets, filters
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -9,14 +12,15 @@ from .models import (
     TranslatorRequest,
     SimCardRequest,
     Hotel,
-    Booking
+    Booking,
 )
 from .serializers import (
     VisaRequestSerializer,
     TransferRequestSerializer,
     TranslatorRequestSerializer,
     SimCardRequestSerializer,
-    HotelSerializer, BookingSerializer,
+    HotelSerializer,
+    BookingSerializer,
 )
 from .permissions import IsOwner, HotelPermission, BookingPermission
 
@@ -103,7 +107,6 @@ class TransferRetrieveView(generics.RetrieveAPIView):
         return super().get(request, *args, **kwargs)
 
 
-
 class BookingViewSet(viewsets.ModelViewSet):
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated, BookingPermission]
@@ -116,7 +119,6 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-
 
 
 class HotelViewSet(viewsets.ModelViewSet):
@@ -206,3 +208,71 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class OrdersMeView(APIView):
+    """
+    Bemor (patient) o'z buyurtma bergan barcha servicelarni ko'rish uchun.
+    URL: /orders/me (GET)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        # Faqat patient roli uchun (agar roli 'user' yoki 'patient' bo'lsa)
+        if user.role not in ["user", "patient"]:  # Rolni loyihangizga moslashtiring
+            return Response(
+                {"detail": "Faqat bemorlar uchun."}, status=status.HTTP_403_FORBIDDEN
+            )
+
+        data = {
+            "visas": VisaRequestSerializer(
+                VisaRequest.objects.filter(user=user), many=True
+            ).data,
+            "transfers": TransferRequestSerializer(
+                TransferRequest.objects.filter(user=user), many=True
+            ).data,
+            "translators": TranslatorRequestSerializer(
+                TranslatorRequest.objects.filter(user=user), many=True
+            ).data,
+            "simcards": SimCardRequestSerializer(
+                SimCardRequest.objects.filter(user=user), many=True
+            ).data,
+            "bookings": BookingSerializer(
+                Booking.objects.filter(user=user), many=True
+            ).data,
+        }
+        return Response(data)
+
+
+class OrdersListView(APIView):
+    """
+    Operator/admin/superadmin barcha buyurtmalarni ko'rish uchun.
+    URL: /orders/ (GET)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.role not in ["admin", "superadmin", "operator"]:
+            return Response(
+                {"detail": "Faqat operator/admin/superadmin uchun."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        data = {
+            "visas": VisaRequestSerializer(VisaRequest.objects.all(), many=True).data,
+            "transfers": TransferRequestSerializer(
+                TransferRequest.objects.all(), many=True
+            ).data,
+            "translators": TranslatorRequestSerializer(
+                TranslatorRequest.objects.all(), many=True
+            ).data,
+            "simcards": SimCardRequestSerializer(
+                SimCardRequest.objects.all(), many=True
+            ).data,
+            "bookings": BookingSerializer(Booking.objects.all(), many=True).data,
+        }
+        return Response(data)

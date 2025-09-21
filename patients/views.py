@@ -82,7 +82,25 @@ class PatientListView(generics.ListAPIView):
             "stage", "tag", "profile__user", "created_by"
         ).prefetch_related("documents", "history")
 
-        return base.filter(profile__user=user) if role == "patient" else base
+        # Agar "patient" roli bo'lsa, faqat o'ziga tegishli Patientni ko'radi
+        if role == "patient":
+            return base.filter(profile__user=user)
+
+        # Faqat superadmin yangi yaratilgan Patientlarni ko'radi
+        # Boshqa rollar (operator, admin) faqat avvaldan mavjud bo'lganlarni ko'radi
+        if role == "superadmin":
+            return (
+                base.all()
+            )  # Superadmin hamma narsani ko'radi, shu jumladan yangi ro'yxatdan o'tganlarni
+        else:
+            # Operator va admin faqat avvaldan mavjud bo'lgan Patientlarni ko'radi
+            # Yangi yaratilganlarni (signal orqali avto-yaratilganlarni) cheklaymiz
+            # Bu yerda "created_at" yoki boshqa belgi orqali filtrlash mumkin
+            # Masalan, faqat 1 kundan oldingi rekordlarni ko'rish
+            from django.utils import timezone
+
+            one_day_ago = timezone.now() - timezone.timedelta(days=1)
+            return base.filter(created_at__lte=one_day_ago)
 
 
 # ==========================================
