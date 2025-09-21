@@ -68,17 +68,21 @@ class PatientDocumentSerializer(serializers.ModelSerializer):
         return data
 
 
+from rest_framework import serializers
+from .models import Patient  # o'z model joylashgan faylini to‘g‘ri chaqir
+
+
 class PatientSerializer(serializers.ModelSerializer):
+    # Related fieldlarni o‘qish uchun
     stage_title = serializers.CharField(source="stage.title", read_only=True)
     tag_name = serializers.CharField(source="tag.name", read_only=True)
     tag_color = serializers.CharField(source="tag.color", read_only=True)
 
-    # QO'SHILDI: Avatarning to'liq URL manzilini qaytarish uchun
+    # Avatar uchun to‘liq URL
     avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Patient
-        # O'ZGARTIRILDI: 'avatar_url' maydoni qo'shildi
         fields = [
             "id",
             "full_name",
@@ -90,11 +94,14 @@ class PatientSerializer(serializers.ModelSerializer):
             "tag_color",
             "created_at",
             "updated_at",
-            "avatar_url",  # Yangi maydon
+            "avatar_url",  # yangi maydon
         ]
 
-    # QO'SHILDI: Avatarning to'liq manzilini yasash metodi
     def get_avatar_url(self, obj):
+        """
+        Avatarning to‘liq URL manzilini qaytaradi.
+        request context bo‘lsa, build_absolute_uri ishlatiladi.
+        """
         request = self.context.get("request")
         if obj.avatar and request:
             return request.build_absolute_uri(obj.avatar.url)
