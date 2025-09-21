@@ -214,6 +214,11 @@ SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
 }
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://medmapp-production-b901.up.railway.app",
+    "https://medmapp-production.up.railway.app",
+    "https://medmapp.onrender.com",
+]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React dev server
