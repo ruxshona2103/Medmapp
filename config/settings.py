@@ -151,6 +151,8 @@ REST_FRAMEWORK = {
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = []  # agar localda qo‘shimcha static papka bo‘lsa
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 
 MEDIA_URL = "/media/"
