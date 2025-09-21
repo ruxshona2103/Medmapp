@@ -24,6 +24,7 @@ ALLOWED_HOSTS = [
     "medmapp-production.up.railway.app",
     "127.0.0.1",
     "library.localhost",
+    "medmapp-production-b901.up.railway.app",
 ]
 
 
