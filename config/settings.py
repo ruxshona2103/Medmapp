@@ -224,7 +224,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://medmapp-admin-panel.vercel.app",
-    "https://medmapp-production-b901.up.railway.app",  # Swagger ochiladigan domen
+    "https://medmapp-production-b901.up.railway.app",
     "https://medmapp-production.up.railway.app",
     "https://medmapp.onrender.com",
 ]
