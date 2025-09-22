@@ -1,4 +1,4 @@
-# views.py
+# views.py (updated)
 
 import logging
 from django.shortcuts import get_object_or_404
@@ -88,7 +88,7 @@ class PatientListView(generics.ListAPIView):
 
         # Faqat superadmin yangi yaratilgan Patientlarni ko'radi
         # Boshqa rollar (operator, admin) faqat avvaldan mavjud bo'lganlarni ko'radi
-        if role == "superadmin":
+        if role == "superadmin" or "operator":
             return (
                 base.all()
             )  # Superadmin hamma narsani ko'radi, shu jumladan yangi ro'yxatdan o'tganlarni
@@ -136,6 +136,7 @@ class PatientCreateView(generics.CreateAPIView):
 # ==========================================
 # 4) Bemor o‘z profilingini ko‘rish va O'ZGARTIRISH
 # ==========================================
+# views.py
 class PatientMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -156,7 +157,6 @@ class PatientMeView(APIView):
         serializer = PatientProfileSerializer(profile, context={"request": request})
         return Response(serializer.data)
 
-    # QO'SHILDI: Bemor o'z profilini qisman (PATCH) yangilashi uchun
     def patch(self, request):
         if _is_swagger(self):
             return Response({})
@@ -167,14 +167,24 @@ class PatientMeView(APIView):
 
         profile = get_object_or_404(PatientProfile, user=user)
 
-        # Serializer yordamida ma'lumotlarni yangilaymiz
-        # partial=True faqat yuborilgan maydonlarni yangilashni bildiradi
+        # Serializer yordamida ma'lumotlarni yangilash
         serializer = PatientProfileSerializer(
             profile, data=request.data, partial=True, context={"request": request}
         )
 
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        updated_instance = serializer.save()
+
+        # Patient ma'lumotlarini yangilash
+        if hasattr(updated_instance, "patient_record"):
+            patient = updated_instance.patient_record
+            if "full_name" in request.data:
+                patient.full_name = request.data.get("full_name", patient.full_name)
+            if "email" in request.data:
+                patient.email = request.data.get("email", patient.email)
+            if "region" in request.data:
+                patient.region = request.data.get("region", patient.region)
+            patient.save(update_fields=["full_name", "email", "region"])
 
         # Yangilangan ma'lumotlarni qaytaramiz
         return Response(serializer.data)
@@ -372,3 +382,19 @@ class TagDeleteView(generics.DestroyAPIView):
         if _norm_role(request.user) not in ["admin", "operator"]:
             raise PermissionDenied("Faqat admin yoki operator tegni o‘chira oladi.")
         return super().destroy(request, *args, **kwargs)
+
+
+# ==========================================
+# 11) Bemor profilingini o'chirish (foydalanuvchi hisobini o'chirish)
+# ==========================================
+class PatientDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request):
+        user = request.user
+        if _norm_role(user) != "patient":
+            raise PermissionDenied("Faqat bemorlar o'z profilini o'chira oladi.")
+
+        # Foydalanuvchini o'chirish (profile va patient kaskad orqali o'chiriladi)
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

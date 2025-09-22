@@ -12,7 +12,10 @@ from .views import (
     StageListView,
     TagListView,
     TagDeleteView,
+    PatientDeleteView,  # Yangi qo'shilgan
 )
+
+app_name = "patients"  # Namespace qo'shish uchun tavsiya qilinadi
 
 urlpatterns = [
     # Profil va bemorlar
@@ -25,7 +28,9 @@ urlpatterns = [
     path("me/avatar/", PatientAvatarUpdateView.as_view(), name="patient-avatar-update"),
     # Bosqich
     path(
-        "<int:patient_id>/change-stage/", ChangeStageView.as_view(), name="change-stage"
+        "<int:patient_id>/change-stage/",
+        ChangeStageView.as_view(),
+        name="change-stage",
     ),
     # Hujjatlar
     path(
@@ -42,4 +47,8 @@ urlpatterns = [
     path("stages/", StageListView.as_view(), name="stage-list"),
     path("tags/", TagListView.as_view(), name="tag-list"),
     path("tags/<int:pk>/", TagDeleteView.as_view(), name="tag-delete"),
+    # Yangi: Hisobni o'chirish
+    path(
+        "delete/", PatientDeleteView.as_view(), name="patient-delete"
+    ),  # Yangi qo'shilgan
 ]

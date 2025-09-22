@@ -88,6 +88,7 @@ class PatientSerializer(serializers.ModelSerializer):
             "full_name",
             "phone",
             "email",
+            "region",
             "source",
             "stage_title",
             "tag_name",
@@ -108,10 +109,12 @@ class PatientSerializer(serializers.ModelSerializer):
         return None
 
 
+# serializers.py (qo‘shimcha: region va email qo‘shish va update logikasi)
 class PatientProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
-    # Endi 'patient' nested serializeri avatarni ham qaytaradi
-    patient = PatientSerializer(source="patient_record", read_only=True)
+    patient = PatientSerializer(
+        source="patient_record", read_only=False
+    )  # Nested writable qilish uchun read_only=False
     documents = PatientDocumentSerializer(
         many=True, read_only=True, source="patient_record.documents"
     )
@@ -120,6 +123,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
     )
 
     full_name = serializers.CharField(max_length=150, write_only=True, required=False)
+    email = serializers.EmailField(
+        write_only=True, required=False
+    )  # Yangi: email qo'shildi (write_only)
 
     class Meta:
         model = PatientProfile
@@ -131,15 +137,17 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "gender",
             "complaints",
             "previous_diagnosis",
+            "region",  # Yangi maydon
             "patient",
             "documents",
             "history",
             "full_name",
+            "email",  # Yangi maydon
         ]
 
     def update(self, instance, validated_data):
-        # ... (bu qism o'zgarishsiz qoladi) ...
         full_name = validated_data.pop("full_name", None)
+        email = validated_data.pop("email", None)  # Yangi: email ni olish
         user = instance.user
 
         if full_name:
@@ -152,6 +160,12 @@ class PatientProfileSerializer(serializers.ModelSerializer):
                 patient = instance.patient_record
                 patient.full_name = full_name
                 patient.save(update_fields=["full_name"])
+
+        # Yangi: Email ni Patient ga yangilash
+        if email and hasattr(instance, "patient_record") and instance.patient_record:
+            patient = instance.patient_record
+            patient.email = email
+            patient.save(update_fields=["email"])
 
         return super().update(instance, validated_data)
 
