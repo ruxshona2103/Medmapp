@@ -95,6 +95,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 #         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
+# This configuration in the Django settings file is defining the default database connection settings
+# for PostgreSQL. Here's what each key represents:
 # DATABASES = {
 #     "default": {
 #         "ENGINE": "django.db.backends.postgresql",

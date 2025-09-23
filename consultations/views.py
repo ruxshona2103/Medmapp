@@ -34,6 +34,7 @@ from .serializers import (
     PrescriptionSerializer,
     DoctorSummarySerializer,
     AttachmentSerializer,
+    UserTinySerializer,
 )
 
 User = get_user_model()
@@ -58,11 +59,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
             "get_messages",
             "post_message",
             "mark_read",
-            "operator_conversation_messages",
-            "operator_mark_read",
             "get_prescriptions",
             "get_summary",
             "get_files",
+            "operator_mark_read",
         ]:
             return [IsAuthenticated()]
         return super().get_permissions()
@@ -431,9 +431,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            # Agar operator-bemor suhbati bo'lsa, DoctorSummary o'rniga boshqa ma'lumot qaytarish
+            # Operator (do'xtir) uchun maxsus xulosa
             if conversation.operator and conversation.operator == request.user:
-                # Operator uchun maxsus xulosa yoki ma'lumot
                 summary_data = {
                     "conversation_id": conversation.id,
                     "title": conversation.title,
@@ -449,16 +448,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     )
                     .exclude(read_statuses__user=request.user)
                     .count(),
+                    "message_count": conversation.messages.filter(
+                        is_deleted=False
+                    ).count(),
                 }
                 return Response(summary_data)
 
-            # Agar DoctorSummary mavjud bo'lsa
-            summary = conversation.doctor_summary.first()
-            if not summary:
+            # Bemor yoki boshqa holatlar uchun DoctorSummary
+            try:
+                summary = (
+                    conversation.doctor_summary
+                )  # OneToOneField bo'lgani uchun .first() kerak emas
+            except DoctorSummary.DoesNotExist:
                 return Response(
                     {"detail": "No summary found for this conversation"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
+
             serializer = DoctorSummarySerializer(summary, context={"request": request})
             return Response(serializer.data)
 
@@ -500,142 +506,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {"detail": f"Error retrieving files: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    # Operator-specific actions remain unchanged...
-    @swagger_auto_schema(
-        methods=["GET"],
-        operation_summary="Retrieve operator conversation messages",
-        operation_description="Retrieve messages in a conversation with a patient by operator",
-        manual_parameters=[
-            openapi.Parameter(
-                name="patient_id",
-                in_=openapi.IN_PATH,
-                type=openapi.TYPE_INTEGER,
-                description="Patient ID",
-                required=True,
-            ),
-            openapi.Parameter(
-                name="since_id",
-                in_=openapi.IN_QUERY,
-                type=openapi.TYPE_INTEGER,
-                description="Messages after the specified message ID",
-                required=False,
-            ),
-        ],
-        responses={
-            200: openapi.Response("List of messages", MessageSerializer(many=True)),
-            403: "Not an operator",
-            404: "Patient not found",
-        },
-    )
-    @swagger_auto_schema(
-        methods=["POST"],
-        operation_summary="Send message in operator conversation",
-        operation_description="Send a new message in a conversation with a patient by operator",
-        manual_parameters=[
-            openapi.Parameter(
-                name="patient_id",
-                in_=openapi.IN_PATH,
-                type=openapi.TYPE_INTEGER,
-                description="Patient ID",
-                required=True,
-            ),
-        ],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "type": openapi.Schema(
-                    type=openapi.TYPE_STRING, enum=["text", "file"], default="text"
-                ),
-                "content": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Message content"
-                ),
-                "reply_to": openapi.Schema(type=openapi.TYPE_INTEGER, nullable=True),
-            },
-            required=["content"],
-        ),
-        responses={
-            201: MessageSerializer,
-            403: "Not an operator",
-            404: "Patient not found",
-        },
-    )
-    @action(
-        detail=False,
-        methods=["get", "post"],
-        url_path=r"operator/(?P<patient_id>\d+)/messages",
-        url_name="operator-messages",
-    )
-    def operator_conversation_messages(self, request: Request, patient_id=None):
-        try:
-            try:
-                patient_id = int(patient_id)
-            except (ValueError, TypeError):
-                return Response(
-                    {"detail": "Invalid patient ID format"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            if not (
-                request.user.is_authenticated
-                and (
-                    request.user.is_staff
-                    or getattr(request.user, "role", None) == "operator"
-                )
-            ):
-                return Response(
-                    {"detail": "Only operators can use this endpoint"},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-            patient = get_object_or_404(User, pk=patient_id)
-
-            conversation, created = Conversation.objects.get_or_create(
-                patient=patient,
-                operator=request.user,
-                defaults={
-                    "created_by": request.user,
-                    "title": f"Operator conversation: {patient.get_full_name() or patient.username or f'User {patient_id}'}",
-                    "last_message_at": timezone.now(),
-                },
-            )
-
-            if created:
-                Participant.objects.get_or_create(
-                    conversation=conversation,
-                    user=patient,
-                    defaults={"role": "patient"},
-                )
-                Participant.objects.get_or_create(
-                    conversation=conversation,
-                    user=request.user,
-                    defaults={"role": "operator"},
-                )
-
-                welcome_message = Message.objects.create(
-                    conversation=conversation,
-                    sender=request.user,
-                    type="system",
-                    content=f"Hello! I am operator {request.user.get_full_name() or request.user.username}. Ready to assist you. How can I help?",
-                )
-                MessageReadStatus.objects.create(
-                    message=welcome_message,
-                    user=request.user,
-                    read_at=timezone.now(),
-                )
-
-            context = {"request": request}
-
-            if request.method == "GET":
-                return self._get_messages(conversation, request, context)
-            elif request.method == "POST":
-                return self._post_message(conversation, request, context)
-
-        except Exception as e:
-            return Response(
-                {"detail": f"Error in operator conversation: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
