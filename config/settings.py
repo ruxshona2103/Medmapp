@@ -111,7 +111,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": dj_database_url.parse(
-        "postgresql://postgres:pNIQzMNeHUDtBYUwyBiOlcYMSoJbovfl@tramway.proxy.rlwy.net:34207/railway",
+        "postgresql://postgres:oCvZGMRaaTIjYZfTXfAjSNbZvZHKoniR@gondola.proxy.rlwy.net:42842/railway",
         conn_max_age=600,
     )
 }
