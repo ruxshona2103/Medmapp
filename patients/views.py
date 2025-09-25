@@ -1,5 +1,6 @@
 # views.py (updated)
 
+from django.utils import timezone
 import logging
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, permissions
@@ -19,6 +20,7 @@ from .serializers import (
     UserSerializer,
     PatientAvatarSerializer,
 )
+from applications.models import Application
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -65,6 +67,8 @@ class PatientProfileListView(generics.ListAPIView):
 # ==========================================
 # 2) Barcha Patient lar ro‘yxati
 # ==========================================
+
+
 class PatientListView(generics.ListAPIView):
     serializer_class = PatientSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -73,34 +77,96 @@ class PatientListView(generics.ListAPIView):
 
     def get_queryset(self):
         if _is_swagger(self) or not self.request.user.is_authenticated:
+            logger.info(
+                "Swagger yoki autentifikatsiya qilinmagan foydalanuvchi uchun bo'sh queryset"
+            )
             return Patient.objects.none()
 
         user = self.request.user
         role = _norm_role(user)
+        logger.info(f"User: {user.phone_number}, Role: {role}")
 
         base = Patient.objects.select_related(
             "stage", "tag", "profile__user", "created_by"
         ).prefetch_related("documents", "history")
+        logger.info(f"Base queryset count: {base.count()}")
 
         # Agar "patient" roli bo'lsa, faqat o'ziga tegishli Patientni ko'radi
         if role == "patient":
-            return base.filter(profile__user=user)
+            queryset = base.filter(profile__user=user)
+            logger.info(f"Patient queryset count: {queryset.count()}")
+            return queryset
 
-        # Faqat superadmin yangi yaratilgan Patientlarni ko'radi
-        # Boshqa rollar (operator, admin) faqat avvaldan mavjud bo'lganlarni ko'radi
-        if role == "superadmin" or "operator":
-            return (
-                base.all()
-            )  # Superadmin hamma narsani ko'radi, shu jumladan yangi ro'yxatdan o'tganlarni
+        # Superadmin yoki operator uchun barcha Patientlarni qaytarish
+        if role in ["superadmin", "operator"]:
+            # Applicationlardan Patient yozuvlarini avtomatik yaratish
+            self.create_missing_patients_from_applications()
+            return base.all()
+
+        # Boshqa rollar uchun filtrlangan queryset
+        one_day_ago = timezone.now() - timezone.timedelta(days=1)
+        queryset = base.filter(created_at__lte=one_day_ago)
+        logger.info(f"Filtered queryset count (1 kundan eski): {queryset.count()}")
+        return queryset
+
+    def create_missing_patients_from_applications(self):
+        """
+        Mavjud Applicationlarni tekshirib, agar ularga mos Patient yozuvi yo'q bo'lsa,
+        avtomatik yaratish. Agar mavjud bo'lsa, hech qanday xabar yubormaslik.
+        """
+        # Applicationlarda patient_id orqali bog'langan userlarni olish
+        applications = Application.objects.select_related("patient").all()
+        created_count = 0
+
+        for app in applications:
+            user = app.patient
+            logger.info(
+                f"Application {app.application_id} uchun Patient tekshirilmoqda, User: {user.phone_number}"
+            )
+
+            # PatientProfile mavjudligini tekshirish
+            try:
+                profile = PatientProfile.objects.get(user=user)
+            except PatientProfile.DoesNotExist:
+                full_name = user.get_full_name() or user.phone_number or "Noma'lum"
+                profile = PatientProfile.objects.create(
+                    user=user,
+                    full_name=full_name,
+                    gender="male",
+                    complaints=app.complaint or "",
+                    previous_diagnosis=app.diagnosis or "",
+                )
+                logger.info(
+                    f"Yangi PatientProfile yaratildi: {profile.id} for Application {app.application_id}"
+                )
+
+            # Patient yozuvini tekshirish va yaratish
+            patient_exists = Patient.objects.filter(profile=profile).exists()
+            if not patient_exists:
+                patient = Patient.objects.create(
+                    profile=profile,
+                    full_name=profile.full_name,
+                    phone=user.phone_number,
+                    email=user.email if hasattr(user, "email") else None,
+                    created_by=user,
+                    source="Application",
+                    created_at=timezone.now(),
+                )
+                created_count += 1
+                logger.info(
+                    f"Yangi Patient yaratildi: {patient.id} for Application {app.application_id}"
+                )
+            else:
+                logger.info(
+                    f"Mavjud Patient ishlatildi for Application {app.application_id}"
+                )
+
+        if created_count > 0:
+            logger.info(
+                f"{created_count} ta Application uchun Patient yozuvlari avtomatik yaratildi"
+            )
         else:
-            # Operator va admin faqat avvaldan mavjud bo'lgan Patientlarni ko'radi
-            # Yangi yaratilganlarni (signal orqali avto-yaratilganlarni) cheklaymiz
-            # Bu yerda "created_at" yoki boshqa belgi orqali filtrlash mumkin
-            # Masalan, faqat 1 kundan oldingi rekordlarni ko'rish
-            from django.utils import timezone
-
-            one_day_ago = timezone.now() - timezone.timedelta(days=1)
-            return base.filter(created_at__lte=one_day_ago)
+            logger.info("Hech qanday yangi Patient yaratilmadi, chunki barchasi mavjud")
 
 
 # ==========================================

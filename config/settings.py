@@ -33,6 +33,7 @@ AUTH_USER_MODEL = "authentication.CustomUser"
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "drf_yasg",
+    "channels",
     "phonenumber_field",
     "patients.apps.PatientsConfig",
     "authentication",
@@ -84,6 +86,15 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
 
 
 # Database
@@ -97,24 +108,24 @@ WSGI_APPLICATION = "config.wsgi.application"
 # }
 # This configuration in the Django settings file is defining the default database connection settings
 # for PostgreSQL. Here's what each key represents:
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": "medmapp",
-#         "USER": "postgres",
-#         "PASSWORD": "1111",
-#         "HOST": "localhost",
-#         "PORT": "5432",
-#     }
-# }
-
-
 DATABASES = {
-    "default": dj_database_url.parse(
-        "postgresql://postgres:oCvZGMRaaTIjYZfTXfAjSNbZvZHKoniR@gondola.proxy.rlwy.net:42842/railway",
-        conn_max_age=600,
-    )
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "medmapp",
+        "USER": "postgres",
+        "PASSWORD": "1111",
+        "HOST": "localhost",
+        "PORT": "5432",
+    }
 }
+
+
+# DATABASES = {
+#     "default": dj_database_url.parse(
+#         "postgresql://postgres:oCvZGMRaaTIjYZfTXfAjSNbZvZHKoniR@gondola.proxy.rlwy.net:42842/railway",
+#         conn_max_age=600,
+#     )
+# }
 
 
 AUTH_PASSWORD_VALIDATORS = [
