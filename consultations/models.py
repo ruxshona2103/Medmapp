@@ -18,7 +18,9 @@ class Conversation(models.Model):
     """
     title = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(
-        User, on_delete=models.PROTECT, related_name="created_conversations"
+        settings.AUTH_USER_MODEL,  # 👈 string o‘rniga settings.AUTH_USER_MODEL ishlat
+        on_delete=models.PROTECT,
+        related_name="created_conversations"
     )
     patient = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="patient_conversations"
