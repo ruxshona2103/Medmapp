@@ -2,13 +2,14 @@
 Consultations app modellari.
 Bu faylda suhbat, xabarlar, ishtirokchilar va fayllar modellari aniqlanadi.
 """
+from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 import os
 import mimetypes
 
-User = settings.AUTH_USER_MODEL
+User = get_user_model()
 
 # ---------- Asosiy suhbat ----------
 class Conversation(models.Model):
