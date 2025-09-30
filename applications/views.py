@@ -1,10 +1,9 @@
 from prompt_toolkit.validation import ValidationError
 from rest_framework import generics, permissions, viewsets, status
 from rest_framework.decorators import action
-from rest_framework.response import Response
-from .models import Application, Document
-from .serializers import ApplicationSerializer, DocumentSerializer
-from .permissions import IsDoctorOrAdmin
+
+from applications.models import Application
+from applications.serializers import ApplicationSerializer, DocumentSerializer
 
 
 class ApplicationCreateView(generics.CreateAPIView):
@@ -33,11 +32,11 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             # Swagger uchun bo'sh queryset qaytarish
             return Application.objects.none()
-        
+
         user = self.request.user
         if not user.is_authenticated:
             return Application.objects.none()
-        
+
         if getattr(user, 'role', None) == "user":
             return Application.objects.filter(patient=user)
         return Application.objects.all()

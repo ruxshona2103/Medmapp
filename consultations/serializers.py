@@ -1,4 +1,3 @@
-# serializers.py
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
@@ -22,7 +21,6 @@ class UserTinySerializer(serializers.ModelSerializer):
     """
     Foydalanuvchi uchun qisqa ma'lumotlar serializeri.
     """
-
     full_name = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
 
@@ -64,7 +62,6 @@ class AttachmentSerializer(serializers.ModelSerializer):
     """
     Xabarga biriktirilgan fayllar uchun serializer.
     """
-
     file_url = serializers.SerializerMethodField()
     uploader = UserTinySerializer(source="uploaded_by", read_only=True)
     uploader_role = serializers.SerializerMethodField()
@@ -128,7 +125,6 @@ class PrescriptionSerializer(serializers.ModelSerializer):
     """
     Suhbatga bog'langan retseptlar uchun serializer.
     """
-
     class Meta:
         model = Prescription
         fields = "__all__"
@@ -138,7 +134,6 @@ class DoctorSummarySerializer(serializers.ModelSerializer):
     """
     Suhbat uchun shifokor xulosasi uchun serializer.
     """
-
     class Meta:
         model = DoctorSummary
         fields = "__all__"
@@ -148,7 +143,6 @@ class MessageSerializer(serializers.ModelSerializer):
     """
     Xabarlar uchun serializer, attachments va reply_to ma'lumotlari bilan.
     """
-
     sender = UserTinySerializer(read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
     reply_to_message = serializers.SerializerMethodField()
@@ -297,6 +291,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
         conversation = validated_data.pop("conversation")
         validated_data["sender"] = request.user
+        validated_data["is_deleted"] = False  # Har doim False bilan boshlash
 
         with transaction.atomic():
             message = Message.objects.create(
@@ -365,7 +360,6 @@ class ConversationSerializer(serializers.ModelSerializer):
     """
     Suhbatlar uchun serializer, oxirgi xabar va ishtirokchilar bilan.
     """
-
     last_message = serializers.SerializerMethodField()
     last_message_preview = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
@@ -501,7 +495,6 @@ class ConversationCreateSerializer(serializers.ModelSerializer):
     """
     Yangi suhbat yaratish uchun serializer.
     """
-
     patient_id = serializers.IntegerField(write_only=True)
     operator_id = serializers.IntegerField(
         write_only=True, required=False, allow_null=True
@@ -621,7 +614,6 @@ class MessageReadStatusSerializer(serializers.ModelSerializer):
     """
     Xabar o'qilgan holatini kuzatish uchun serializer.
     """
-
     user = UserTinySerializer(read_only=True)
     message_id = serializers.IntegerField(source="message.id", read_only=True)
 
@@ -670,3 +662,57 @@ class MessageReadStatusSerializer(serializers.ModelSerializer):
                 print(f"Read status yangilashda xato: {e}")
 
         return status
+
+
+# consultations/signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from .models import Message, MessageReadStatus, Participant
+from django.utils import timezone
+
+
+@receiver(post_save, sender=Message)
+def update_conversation_last_message(sender, instance: Message, created, **kwargs):
+    if created and not instance.is_deleted:
+        try:
+            Conversation.objects.filter(pk=instance.conversation_id).update(
+                last_message_at=instance.created_at
+            )
+        except:
+            pass
+
+
+@receiver(post_save, sender=MessageReadStatus)
+def update_message_read_status(sender, instance: MessageReadStatus, created, **kwargs):
+    if created:
+        try:
+            instance.message.is_read_by_recipient = True
+            instance.message.save(update_fields=["is_read_by_recipient"])
+
+            instance.message.conversation.last_message_at = timezone.now()
+            instance.message.conversation.save(update_fields=["last_message_at"])
+
+            participant = Participant.objects.filter(
+                conversation=instance.message.conversation, user=instance.user
+            ).first()
+            if participant:
+                participant.last_seen_at = timezone.now()
+                participant.save(update_fields=["last_seen_at"])
+        except Exception as e:
+            print(f"Error updating read status: {e}")
+
+
+# consultations/tests.py
+from unittest import TestCase
+from channels.testing import WebsocketCommunicator
+from .consumers import ChatConsumer
+
+
+class ChatConsumerTests(TestCase):
+    async def test_connect(self):
+        communicator = WebsocketCommunicator(
+            ChatConsumer.as_asgi(), "/ws/conversation/1/"
+        )
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        await communicator.disconnect()

@@ -113,7 +113,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": "medmapp",
         "USER": "postgres",
-        "PASSWORD": "1111",
+        "PASSWORD": "1234",
         "HOST": "localhost",
         "PORT": "5432",
     }

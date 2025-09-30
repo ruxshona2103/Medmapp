@@ -1,38 +1,31 @@
-# serializers.py
-
+# patients/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Patient, PatientProfile, Stage, Tag, PatientHistory, PatientDocument
+from applications.models import Application
 
 User = get_user_model()
 
-
 class UserSerializer(serializers.ModelSerializer):
-    # QO'SHILDI: Foydalanuvchining to'liq ismini chiqarish uchun
     full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        # O'ZGARTIRILDI: 'full_name' ro'yxatga qo'shildi
-        fields = ["id", "first_name", "last_name", "full_name", "role", "phone_number"]
+        fields = ["id", "first_name","role",  "last_name", "full_name", "phone_number", "email"]
         ref_name = "PatientsUserSerializer"
 
-    # QO'SHILDI: get_full_name metodi
     def get_full_name(self, obj):
-        return obj.get_full_name()
-
+        return obj.get_full_name() or obj.phone_number or "Noma'lum"
 
 class StageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Stage
         fields = ["id", "title", "code_name", "order", "color"]
 
-
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
         fields = ["id", "name", "color"]
-
 
 class PatientHistorySerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
@@ -40,7 +33,6 @@ class PatientHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientHistory
         fields = ["id", "author", "comment", "created_at"]
-
 
 class PatientDocumentSerializer(serializers.ModelSerializer):
     uploaded_by = UserSerializer(read_only=True)
@@ -67,18 +59,10 @@ class PatientDocumentSerializer(serializers.ModelSerializer):
             data["file"] = request.build_absolute_uri(instance.file.url)
         return data
 
-
-from rest_framework import serializers
-from .models import Patient  # o'z model joylashgan faylini to‘g‘ri chaqir
-
-
 class PatientSerializer(serializers.ModelSerializer):
-    # Related fieldlarni o‘qish uchun
     stage_title = serializers.CharField(source="stage.title", read_only=True)
     tag_name = serializers.CharField(source="tag.name", read_only=True)
     tag_color = serializers.CharField(source="tag.color", read_only=True)
-
-    # Avatar uchun to‘liq URL
     avatar_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -95,37 +79,72 @@ class PatientSerializer(serializers.ModelSerializer):
             "tag_color",
             "created_at",
             "updated_at",
-            "avatar_url",  # yangi maydon
+            "avatar_url",
         ]
 
     def get_avatar_url(self, obj):
-        """
-        Avatarning to‘liq URL manzilini qaytaradi.
-        request context bo‘lsa, build_absolute_uri ishlatiladi.
-        """
         request = self.context.get("request")
         if obj.avatar and request:
             return request.build_absolute_uri(obj.avatar.url)
         return None
 
+class ApplicationSerializer(serializers.ModelSerializer):
+    patient = UserSerializer(read_only=True)
+    patient_data = UserSerializer(write_only=True, required=True)
+    clinic_name = serializers.SerializerMethodField()
+    phone = serializers.CharField(source="patient.phone_number", read_only=True, allow_null=True)
+    email = serializers.CharField(source="patient.email", read_only=True, allow_null=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    patient_record = serializers.SerializerMethodField()
 
-# serializers.py (qo‘shimcha: region va email qo‘shish va update logikasi)
+    class Meta:
+        model = Application
+        fields = [
+            "id",
+            "application_id",
+            "clinic_name",
+            "complaint",
+            "diagnosis",
+            "status",
+            "status_display",
+            "created_at",
+            "updated_at",
+            "patient",
+            "phone",
+            "email",
+            "patient_record",
+            "patient_data",
+        ]
+
+    def get_clinic_name(self, obj):
+        try:
+            profile = obj.patient.patient_profile
+            return profile.full_name or obj.patient.get_full_name() or "Medmapp Clinic"
+        except (AttributeError, PatientProfile.DoesNotExist):
+            return obj.patient.get_full_name() or "Medmapp Clinic"
+
+    def get_patient_record(self, obj):
+        try:
+            patient = Patient.objects.get(
+                profile__user=obj.patient,
+                source=f"Application_{obj.id}"
+            )
+            return PatientSerializer(patient, context=self.context).data
+        except Patient.DoesNotExist:
+            return None
+
+    def validate_patient_data(self, value):
+        phone_number = value.get("phone_number")
+        if not phone_number:
+            raise serializers.ValidationError({"phone_number": "Telefon raqami majburiy."})
+        return value
+
 class PatientProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
-    patient = PatientSerializer(
-        source="patient_record", read_only=False
-    )  # Nested writable qilish uchun read_only=False
-    documents = PatientDocumentSerializer(
-        many=True, read_only=True, source="patient_record.documents"
-    )
-    history = PatientHistorySerializer(
-        many=True, read_only=True, source="patient_record.history"
-    )
-
+    applications = ApplicationSerializer(source="user.application_set", many=True, read_only=True)
+    patient_records = PatientSerializer(many=True, read_only=True)
     full_name = serializers.CharField(max_length=150, write_only=True, required=False)
-    email = serializers.EmailField(
-        write_only=True, required=False
-    )  # Yangi: email qo'shildi (write_only)
+    email = serializers.EmailField(write_only=True, required=False)
 
     class Meta:
         model = PatientProfile
@@ -137,17 +156,15 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "gender",
             "complaints",
             "previous_diagnosis",
-            "region",  # Yangi maydon
-            "patient",
-            "documents",
-            "history",
+            "patient_records",
+            "applications",
             "full_name",
-            "email",  # Yangi maydon
+            "email",
         ]
 
     def update(self, instance, validated_data):
         full_name = validated_data.pop("full_name", None)
-        email = validated_data.pop("email", None)  # Yangi: email ni olish
+        email = validated_data.pop("email", None)
         user = instance.user
 
         if full_name:
@@ -156,82 +173,15 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             user.last_name = parts[1] if len(parts) > 1 else ""
             user.save(update_fields=["first_name", "last_name"])
 
-            if hasattr(instance, "patient_record") and instance.patient_record:
-                patient = instance.patient_record
+            for patient in instance.patient_records.all():
                 patient.full_name = full_name
                 patient.save(update_fields=["full_name"])
 
-        # Yangi: Email ni Patient ga yangilash
-        if email and hasattr(instance, "patient_record") and instance.patient_record:
-            patient = instance.patient_record
-            patient.email = email
-            patient.save(update_fields=["email"])
+        if email:
+            user.email = email
+            user.save(update_fields=["email"])
+            for patient in instance.patient_records.all():
+                patient.email = email
+                patient.save(update_fields=["email"])
 
         return super().update(instance, validated_data)
-
-
-class PatientProfileSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
-    patient = PatientSerializer(source="patient_record", read_only=True)
-    documents = PatientDocumentSerializer(
-        many=True, read_only=True, source="patient_record.documents"
-    )
-    history = PatientHistorySerializer(
-        many=True, read_only=True, source="patient_record.history"
-    )
-
-    # QO'SHILDI: To'liq ismni PATCH so'rovida qabul qilish uchun (faqat yozish uchun)
-    full_name = serializers.CharField(max_length=150, write_only=True, required=False)
-
-    class Meta:
-        model = PatientProfile
-        # O'ZGARTIRILDI: 'full_name' maydoni qo'shildi
-        fields = [
-            "id",
-            "user",
-            "passport",
-            "dob",
-            "gender",
-            "complaints",
-            "previous_diagnosis",
-            "patient",
-            "documents",
-            "history",
-            "full_name",  # Yangi maydon'
-        ]
-
-    # QO'SHILDI: update metodi to'liq ismni yangilash uchun
-    def update(self, instance, validated_data):
-        """
-        To'liq ismni (full_name) yangilash logikasi.
-        Bu metod User modelidagi first_name/last_name va agar mavjud bo'lsa,
-        bog'liq Patient modelidagi full_name maydonlarini yangilaydi.
-        """
-        # 'full_name' maydonini validated_data'dan olamiz
-        full_name = validated_data.pop("full_name", None)
-        user = instance.user
-
-        if full_name:
-            # Ismni probel bo'yicha ajratamiz (ism va familiyaga)
-            parts = full_name.split(" ", 1)
-            user.first_name = parts[0]
-            user.last_name = parts[1] if len(parts) > 1 else ""
-            user.save(update_fields=["first_name", "last_name"])
-
-            # Agar profilga bog'langan bemor (patient_record) mavjud bo'lsa, uning ham ismini yangilaymiz
-            if hasattr(instance, "patient_record") and instance.patient_record:
-                patient = instance.patient_record
-                patient.full_name = full_name
-                patient.save(update_fields=["full_name"])
-
-        # Boshqa maydonlarni standart usulda yangilash uchun super().update() chaqiriladi
-        return super().update(instance, validated_data)
-
-
-class PatientAvatarSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Patient
-        fields = ["avatar"]
-        extra_kwargs = {
-            "avatar": {"required": True}  # Patch so'rovida avatar yuborilishi shart
-        }

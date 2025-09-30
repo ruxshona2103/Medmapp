@@ -1,4 +1,7 @@
-# models.py
+"""
+Consultations app modellari.
+Bu faylda suhbat, xabarlar, ishtirokchilar va fayllar modellari aniqlanadi.
+"""
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -7,9 +10,11 @@ import mimetypes
 
 User = settings.AUTH_USER_MODEL
 
-
 # ---------- Asosiy suhbat ----------
 class Conversation(models.Model):
+    """
+    Suhbat model. Bemor va operator o'rtasidagi suhbatni ifodalaydi.
+    """
     title = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="created_conversations"
@@ -52,9 +57,11 @@ class Conversation(models.Model):
             self.operator = self.created_by
         super().save(*args, **kwargs)
 
-
 # ---------- Ishtirokchilar ----------
 class Participant(models.Model):
+    """
+    Suhbat ishtirokchisi model. Suhbatdagi foydalanuvchi rolini ifodalaydi.
+    """
     ROLE_CHOICES = (
         ("patient", "Patient"),
         ("operator", "Operator"),
@@ -80,9 +87,11 @@ class Participant(models.Model):
     def __str__(self) -> str:
         return f"{self.user} in {self.conversation} as {self.role}"
 
-
 # ---------- Xabarlar ----------
 class Message(models.Model):
+    """
+    Xabar model. Suhbatdagi xabarlarni ifodalaydi.
+    """
     TYPE_CHOICES = (("text", "Text"), ("file", "File"), ("system", "System"))
 
     conversation = models.ForeignKey(
@@ -123,9 +132,11 @@ class Message(models.Model):
             self.is_read_by_recipient = True
             self.save(update_fields=["is_read_by_recipient"])
 
-
 # ---------- Fayllar ----------
 def chat_upload_path(instance: "Attachment", filename: str) -> str:
+    """
+    Fayl yuklash yo'lini aniqlash.
+    """
     timestamp = timezone.now()
     safe_filename = "".join(
         c for c in os.path.basename(filename) if c.isalnum() or c in "._-"
@@ -136,6 +147,9 @@ def chat_upload_path(instance: "Attachment", filename: str) -> str:
 
 
 class Attachment(models.Model):
+    """
+    Xabarga biriktirilgan fayl model.
+    """
     FILE_TYPE_CHOICES = (
         ("image", "Image"),
         ("video", "Video"),
@@ -210,9 +224,11 @@ class Attachment(models.Model):
             size /= 1024.0
         return f"{size:.1f} TB"
 
-
 # ---------- O'qilgan xabarlar tracking'i ----------
 class MessageReadStatus(models.Model):
+    """
+    Xabar o'qilgan holatini kuzatish model.
+    """
     message = models.ForeignKey(
         Message, on_delete=models.CASCADE, related_name="read_statuses"
     )
@@ -232,9 +248,11 @@ class MessageReadStatus(models.Model):
     def __str__(self):
         return f"Msg#{self.message.id} read by {self.user} at {self.read_at}"
 
-
 # ---------- Suhbat statistikasi ----------
 class ConversationStats(models.Model):
+    """
+    Suhbat statistikasi model.
+    """
     conversation = models.OneToOneField(
         Conversation, on_delete=models.CASCADE, related_name="stats"
     )
@@ -249,9 +267,11 @@ class ConversationStats(models.Model):
     def __str__(self):
         return f"Stats for {self.conversation}"
 
-
 # ---------- Yangi Modelar ----------
 class Prescription(models.Model):
+    """
+    Retsept model.
+    """
     conversation = models.ForeignKey(
         Conversation, on_delete=models.CASCADE, related_name="prescriptions"
     )
@@ -266,6 +286,9 @@ class Prescription(models.Model):
 
 
 class DoctorSummary(models.Model):
+    """
+    Shifokor xulosasi model.
+    """
     conversation = models.OneToOneField(
         Conversation, on_delete=models.CASCADE, related_name="doctor_summary"
     )

@@ -7,6 +7,9 @@ from .models import Conversation, Participant, Message, Attachment, MessageReadS
 
 
 class AttachmentInline(admin.TabularInline):
+    """
+    Attachment modelini Message admin sahifasida inline ko'rsatish uchun.
+    """
     model = Attachment
     extra = 0
     fields = ("file", "original_name", "file_type", "size", "mime_type", "uploaded_by")
@@ -21,6 +24,9 @@ class AttachmentInline(admin.TabularInline):
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
+    """
+    Message modelining admin konfiguratsiyasi.
+    """
     list_display = (
         "id",
         "conversation_link",
@@ -74,13 +80,20 @@ class MessageAdmin(admin.ModelAdmin):
 
 
 class ParticipantInline(admin.TabularInline):
+    """
+    Participant modelini Conversation admin sahifasida inline ko'rsatish uchun.
+    """
     model = Participant
     extra = 0
     fields = ("user", "role", "joined_at", "is_muted", "last_seen_at")
     readonly_fields = ("joined_at", "last_seen_at")
 
 
+@admin.register(Conversation)
 class ConversationAdmin(admin.ModelAdmin):
+    """
+    Conversation modelining admin konfiguratsiyasi.
+    """
     list_display = (
         "id",
         "title",
@@ -91,7 +104,7 @@ class ConversationAdmin(admin.ModelAdmin):
         "message_count",
         "is_active",
     )
-    list_filter = ("is_active", "last_message_at")  # created_at olib tashlandi
+    list_filter = ("is_active", "last_message_at")
     search_fields = (
         "title",
         "patient__first_name",
@@ -100,12 +113,40 @@ class ConversationAdmin(admin.ModelAdmin):
         "operator__last_name",
     )
     list_per_page = 25
-    date_hierarchy = "last_message_at"  # created_at o‘rniga
+    date_hierarchy = "last_message_at"
     inlines = [ParticipantInline]
+
+    def patient_link(self, obj):
+        url = f"/admin/auth/user/{obj.patient_id}/change/"
+        return format_html('<a href="{}">{}</a>', url, obj.patient.get_full_name())
+
+    patient_link.short_description = "Bemor"
+
+    def operator_link(self, obj):
+        if obj.operator:
+            url = f"/admin/auth/user/{obj.operator_id}/change/"
+            return format_html('<a href="{}">{}</a>', url, obj.operator.get_full_name())
+        return "Noma'lum"
+
+    operator_link.short_description = "Operator"
+
+    def created_by_link(self, obj):
+        url = f"/admin/auth/user/{obj.created_by_id}/change/"
+        return format_html('<a href="{}">{}</a>', url, obj.created_by.get_full_name())
+
+    created_by_link.short_description = "Yaratgan"
+
+    def message_count(self, obj):
+        return obj.messages.filter(is_deleted=False).count()
+
+    message_count.short_description = "Xabarlar soni"
 
 
 @admin.register(Attachment)
 class AttachmentAdmin(admin.ModelAdmin):
+    """
+    Attachment modelining admin konfiguratsiyasi.
+    """
     list_display = (
         "id",
         "message_link",
@@ -141,6 +182,9 @@ class AttachmentAdmin(admin.ModelAdmin):
 
 @admin.register(Participant)
 class ParticipantAdmin(admin.ModelAdmin):
+    """
+    Participant modelining admin konfiguratsiyasi.
+    """
     list_display = (
         "conversation",
         "user_link",
@@ -170,11 +214,20 @@ class ParticipantAdmin(admin.ModelAdmin):
 
 @admin.register(MessageReadStatus)
 class MessageReadStatusAdmin(admin.ModelAdmin):
+    """
+    MessageReadStatus modelining admin konfiguratsiyasi.
+    """
     list_display = ("message_id", "user_link", "read_at", "is_read")
     list_filter = ("is_read", "read_at")
     search_fields = ("user__first_name", "user__last_name")
     date_hierarchy = "read_at"
     list_per_page = 100
+
+    def message_id(self, obj):
+        url = f"/admin/consultations/message/{obj.message_id}/change/"
+        return format_html('<a href="{}">Msg#{}</a>', url, obj.message.id)
+
+    message_id.short_description = "Xabar"
 
     def user_link(self, obj):
         url = f"/admin/auth/user/{obj.user_id}/change/"
