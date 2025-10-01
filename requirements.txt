@@ -30,3 +30,4 @@ django-phonenumber-field[phonenumberslite]==8.0.0
 whitenoise==6.7.0
 daphne==4.1.2
 channels==4.1.0
+daphne
