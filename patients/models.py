@@ -103,27 +103,6 @@ class Patient(models.Model):
         return self.full_name or (self.profile.user.get_full_name() if self.profile else "No name")
 
 
-class Application(models.Model):
-    patient = models.ForeignKey(
-        Patient, on_delete=models.CASCADE, related_name="applications"
-    )
-    application_id = models.CharField(max_length=100)
-    clinic_name = models.CharField(max_length=255,null=True, blank=True)
-    complaint = models.TextField()
-    diagnosis = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=50, default="new")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = "Ariza"
-        verbose_name_plural = "Arizalar"
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"{self.application_id} - {self.patient.full_name}"
-
-
 class PatientHistory(models.Model):
     patient = models.ForeignKey(
         Patient, on_delete=models.CASCADE, related_name="history"

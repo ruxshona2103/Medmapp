@@ -1,3 +1,4 @@
+# patients/admin.py
 from django.contrib import admin
 from .models import PatientProfile, Patient, Stage, Tag, PatientHistory, PatientDocument
 

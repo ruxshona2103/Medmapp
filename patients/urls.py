@@ -1,6 +1,7 @@
 # patients/urls.py
 from django.urls import path
 from .views import (
+    ConsultationFormView,
     StageListView,
     TagListView,
     TagDeleteView,
@@ -22,6 +23,7 @@ urlpatterns = [
     path("tags/<int:pk>/", TagDeleteView.as_view(), name="tag-delete"),
     path("", PatientListView.as_view(), name="patient-list"),
     path("applications/", ApplicationCreateView.as_view(), name="application-create"),
+    path("consultation/", ConsultationFormView.as_view(), name="consultation-form"),
     path("create/", PatientCreateView.as_view(), name="patient-create"),
     path("me/", PatientMeView.as_view(), name="patient-me"),
     path("operators/me/", OperatorMeView.as_view(), name="operator-me"),

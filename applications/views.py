@@ -2,7 +2,7 @@ from prompt_toolkit.validation import ValidationError
 from rest_framework import generics, permissions, viewsets, status
 from rest_framework.decorators import action
 
-from applications.models import Application
+from applications.models import Application, Document
 from applications.serializers import ApplicationSerializer, DocumentSerializer
 
 
