@@ -45,7 +45,7 @@ class PatientProfile(models.Model):
     complaints = models.TextField(blank=True,null=True, default="")
     previous_diagnosis = models.TextField(blank=True, default="")
     full_name = models.CharField(max_length=255, blank=True, null=True)
-
+    email = models.EmailField(blank=True, null=True)
     class Meta:
         verbose_name = "Bemor Profili"
 
