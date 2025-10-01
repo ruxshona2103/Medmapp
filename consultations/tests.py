@@ -1,3 +1,4 @@
+# consultations/tests.py
 from unittest import TestCase
 from channels.testing import WebsocketCommunicator
 from .consumers import ChatConsumer

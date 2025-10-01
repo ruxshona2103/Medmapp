@@ -1,8 +1,10 @@
-# signals.py (app ichida, masalan models.py oxirida yoki alohida faylda)
-from datetime import timezone
+
+
+# consultations/signals.py
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import Message, MessageReadStatus, Participant
+from django.utils import timezone
 
 
 @receiver(post_save, sender=Message)
@@ -34,3 +36,5 @@ def update_message_read_status(sender, instance: MessageReadStatus, created, **k
                 participant.save(update_fields=["last_seen_at"])
         except Exception as e:
             print(f"Error updating read status: {e}")
+
+
