@@ -3,7 +3,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
 from applications.serializers import ApplicationSerializer
-from .models import Patient, PatientProfile, Stage, Tag, PatientHistory, PatientDocument
+from .models import Patient, PatientProfile,  PatientDocument
 from applications.models import Application
 
 User = get_user_model()
@@ -19,22 +19,6 @@ class UserSerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         return obj.get_full_name() or obj.phone_number or "Noma'lum"
 
-class StageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Stage
-        fields = ["id", "title", "code_name", "order", "color"]
-
-class TagSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Tag
-        fields = ["id", "name", "color"]
-
-class PatientHistorySerializer(serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
-
-    class Meta:
-        model = PatientHistory
-        fields = ["id", "author", "comment", "created_at"]
 
 class PatientDocumentSerializer(serializers.ModelSerializer):
     uploaded_by = UserSerializer(read_only=True)

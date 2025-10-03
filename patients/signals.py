@@ -2,7 +2,9 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
-from .models import Patient, PatientProfile, Stage
+
+from stages.models import Stage
+from .models import Patient, PatientProfile
 from applications.models import Application
 import logging
 
@@ -30,47 +32,35 @@ def create_patient_profile(sender, instance, created, **kwargs):
         else:
             logger.info(f"PatientProfile already exists for User {instance.id}")
 
-@receiver(post_save, sender=Application)
+receiver(post_save, sender=Application)
 def create_patient_from_application(sender, instance, created, **kwargs):
     """
-    Create or update Patient and PatientProfile when an Application is created.
+    Ariza yaratilganda, tegishli PatientProfile va Patient yozuvlari
+    mavjudligini ta'minlaydi.
     """
     if created:
         user = instance.patient
-        logger.info(f"Processing new Application {instance.id} for User {user.id} ({user.phone_number})")
+        logger.info(f"Processing new Application {instance.id} for User {user.id}")
 
-        # Create or get PatientProfile
-        profile, profile_created = PatientProfile.objects.get_or_create(
+        # 1. PatientProfile'ni topamiz yoki yaratamiz
+        profile, _ = PatientProfile.objects.get_or_create(
             user=user,
             defaults={
-                "full_name": user.get_full_name() or user.phone_number or "Noma'lum",
-                "gender": "male",
+                "full_name": user.get_full_name() or user.phone_number,
                 "complaints": instance.complaint or "",
                 "previous_diagnosis": instance.diagnosis or "",
             }
         )
-        if profile_created:
-            logger.info(f"Created PatientProfile: {profile.id} for Application {instance.id}")
-        else:
-            logger.info(f"Using existing PatientProfile: {profile.id} for Application {instance.id}")
 
-        # Create or get Patient
-        stage = Stage.objects.filter(code_name=instance.status).first()
-        patient, patient_created = Patient.objects.get_or_create(
+        # 2. Patient yozuvini topamiz yoki yaratamiz (lekin 'stage'siz)
+        Patient.objects.get_or_create(
             profile=profile,
-            source=f"Application_{instance.id}",
             defaults={
-                "full_name": profile.full_name or user.get_full_name() or "Noma'lum",
+                "full_name": profile.full_name or user.get_full_name(),
                 "phone": user.phone_number,
                 "email": getattr(user, "email", None),
+                "source": f"Application_{instance.id}",
                 "created_by": user,
-                "stage": stage,
             }
         )
-        if patient_created:
-            logger.info(f"Created Patient: {patient.id} for Application {instance.id}")
-        else:
-            patient.full_name = profile.full_name or user.get_full_name() or "Noma'lum"
-            patient.stage = stage
-            patient.save(update_fields=["full_name", "stage"])
-            logger.info(f"Updated Patient: {patient.id} for Application {instance.id}")
+        logger.info(f"Ensured Patient record exists for profile {profile.id}")

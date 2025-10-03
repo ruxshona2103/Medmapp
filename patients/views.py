@@ -1,3 +1,5 @@
+# patients/views.py
+import json
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.utils import timezone
@@ -10,17 +12,15 @@ from rest_framework.exceptions import PermissionDenied, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from rest_framework.parsers import MultiPartParser, FormParser
-from .models import Patient, PatientProfile, Stage, Tag, PatientHistory, PatientDocument
+from .models import Patient, PatientProfile,  PatientDocument
 from .serializers import (
     PatientSerializer,
     PatientProfileSerializer,
-    StageSerializer,
-    TagSerializer,
     PatientDocumentSerializer,
     UserSerializer,
     ApplicationStepSerializer,
 )
-from applications.models import Application
+from applications.models import Application, Document
 from applications.serializers import ApplicationSerializer
 
 User = get_user_model()
@@ -70,27 +70,26 @@ class PatientProfileListView(generics.ListAPIView):
 
 
 class PatientListView(generics.ListAPIView):
-    serializer_class = ApplicationSerializer
+    serializer_class = PatientSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["patient", "status"]
 
     def get_queryset(self):
         if _is_swagger(self) or not self.request.user.is_authenticated:
             logger.info("Swagger or unauthenticated user, returning empty queryset")
-            return Application.objects.none()
+            return Patient.objects.none()
 
         user = self.request.user
         role = _norm_role(user)
         logger.info(f"User: {user.phone_number}, Role: {role}")
 
-        self.create_missing_profiles_for_applications()
+        self.create_missing_patients_for_applications()
 
-        queryset = Application.objects.select_related("patient").all()
+        queryset = Patient.objects.select_related("profile__user").all()
 
         if role == "patient":
-            queryset = queryset.filter(patient=user)
-            logger.info(f"Patient applications count: {queryset.count()}")
+            queryset = queryset.filter(profile__user=user)
+            logger.info(f"Patient records count: {queryset.count()}")
             return queryset
 
         if role in ["superadmin", "operator"]:
@@ -98,10 +97,10 @@ class PatientListView(generics.ListAPIView):
 
         one_day_ago = timezone.now() - timezone.timedelta(days=1)
         queryset = queryset.filter(created_at__lte=one_day_ago)
-        logger.info(f"Filtered applications count (older than 1 day): {queryset.count()}")
+        logger.info(f"Filtered patients count (older than 1 day): {queryset.count()}")
         return queryset
 
-    def create_missing_profiles_for_applications(self):
+    def create_missing_patients_for_applications(self):
         applications = Application.objects.select_related("patient").all()
         created_count = 0
 
@@ -133,15 +132,13 @@ class PatientListView(generics.ListAPIView):
                     "email": getattr(user, "email", None),
                     "created_by": user,
                     "created_at": timezone.now(),
-                    "stage": Stage.objects.filter(code_name=app.status).first(),
                 },
             )
             if patient_created:
                 logger.info(f"Created Patient: {patient.id} for Application {app.id}")
             else:
                 patient.full_name = profile.full_name or user.get_full_name() or "Noma'lum"
-                patient.stage = Stage.objects.filter(code_name=app.status).first()
-                patient.save(update_fields=["full_name", "stage"])
+                patient.save(update_fields=["full_name", ])
                 logger.info(f"Updated Patient: {patient.id} for Application {app.id}")
 
         if created_count > 0:
@@ -150,82 +147,6 @@ class PatientListView(generics.ListAPIView):
             logger.info("No new PatientProfiles created, all exist or updated")
 
 
-class ApplicationCreateView(generics.CreateAPIView):
-    serializer_class = ApplicationSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def perform_create(self, serializer):
-        user = self.request.user
-        role = _norm_role(user)
-        patient_data = serializer.validated_data.pop("patient_data")
-
-        if role == "patient":
-            patient_user = user
-            if patient_data.get("first_name"):
-                patient_user.first_name = patient_data.get("first_name")
-            if patient_data.get("last_name"):
-                patient_user.last_name = patient_data.get("last_name")
-            if patient_data.get("email"):
-                patient_user.email = patient_data.get("email")
-            patient_user.save(update_fields=["first_name", "last_name", "email"])
-        else:
-            phone_number = patient_data.get("phone_number")
-            patient_user, created = User.objects.get_or_create(
-                phone_number=phone_number,
-                defaults={
-                    "username": phone_number,
-                    "first_name": patient_data.get("first_name", ""),
-                    "last_name": patient_data.get("last_name", ""),
-                    "email": patient_data.get("email", None),
-                    "role": "user",
-                },
-            )
-            if created:
-                logger.info(f"Created new User: {patient_user.phone_number}")
-            else:
-                if patient_data.get("first_name"):
-                    patient_user.first_name = patient_data.get("first_name")
-                if patient_data.get("last_name"):
-                    patient_user.last_name = patient_data.get("last_name")
-                if patient_data.get("email"):
-                    patient_user.email = patient_data.get("email")
-                patient_user.save(update_fields=["first_name", "last_name", "email"])
-
-        application = serializer.save(patient=patient_user)
-
-        profile, profile_created = PatientProfile.objects.get_or_create(
-            user=patient_user,
-            defaults={
-                "full_name": patient_user.get_full_name() or patient_user.phone_number or "Noma'lum",
-                "gender": "male",
-                "complaints": application.complaint or "",
-                "previous_diagnosis": application.diagnosis or "",
-            },
-        )
-        if profile_created:
-            logger.info(f"Created PatientProfile: {profile.id} for Application {application.id}")
-
-        patient, patient_created = Patient.objects.get_or_create(
-            profile=profile,
-            source=f"Application_{application.id}",
-            defaults={
-                "full_name": profile.full_name or patient_user.get_full_name() or "Noma'lum",
-                "phone": patient_user.phone_number,
-                "email": getattr(patient_user, "email", None),
-                "created_by": user,
-                "created_at": timezone.now(),
-                "stage": Stage.objects.filter(code_name=application.status).first(),
-            },
-        )
-        if patient_created:
-            logger.info(f"Created Patient: {patient.id} for Application {application.id}")
-        else:
-            patient.full_name = profile.full_name or patient_user.get_full_name() or "Noma'lum"
-            patient.stage = Stage.objects.filter(code_name=application.status).first()
-            patient.save(update_fields=["full_name", "stage"])
-            logger.info(f"Updated Patient: {patient.id} for Application {application.id}")
-
-        logger.info(f"Created Application: {application.application_id} for {patient_user.phone_number}")
 
 
 class PatientMeView(APIView):
@@ -355,40 +276,6 @@ class OperatorMeView(APIView):
         return Response(UserSerializer(user, context={"request": request}).data)
 
 
-class ChangeStageView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def patch(self, request, patient_id):
-        if _is_swagger(self):
-            return Response({})
-
-        patient = get_object_or_404(Patient, id=patient_id)
-        user = request.user
-
-        if _norm_role(user) == "patient":
-            raise PermissionDenied("Bemorlar bosqichni o‘zgartira olmaydi.")
-
-        new_stage_id = request.data.get("new_stage_id")
-        if not new_stage_id:
-            return Response(
-                {"error": "'new_stage_id' majburiy."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        new_stage = get_object_or_404(Stage, id=new_stage_id)
-        old_stage = patient.stage
-        patient.stage = new_stage
-        patient.save(update_fields=["stage"])
-
-        comment = request.data.get(
-            "comment",
-            f"Bosqich o‘zgartirildi: {getattr(old_stage, 'title', '—')} → {new_stage.title}",
-        )
-        PatientHistory.objects.create(patient=patient, author=user, comment=comment)
-
-        return Response(
-            {"success": True, "new_stage": new_stage.title}, status=status.HTTP_200_OK
-        )
 
 
 class PatientDocumentCreateView(generics.CreateAPIView):
@@ -434,131 +321,120 @@ class PatientDocumentDeleteView(generics.DestroyAPIView):
 
 
 class ConsultationFormView(APIView):
+    # --- RUXSATNI O'ZGARTIRAMIZ: Endi operatorlar ham kira oladi ---
+    # Bu yerga IsAdminOrOperator permission klassini qo'shsangiz ham bo'ladi
+    # yoki IsAuthenticated qolib, ichkarida rol tekshiriladi.
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
-        operation_description="Submit a multi-step consultation form. Use step 1 for patient data, step 2 for medical history, and step 3 for file upload.",
-        # --- XATOLIKNI TUZATISH BOSHLANDI ---
-        # request_body olib tashlandi, uning o'rniga hamma maydonlar manual_parameters ichida
+        operation_description="Bemor yoki Operator uchun 3-bosqichli ariza yuborish.",
         manual_parameters=[
             openapi.Parameter(
-                name='step',
+                name='step', in_=openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True,
+                description='Jarayon bosqichi (1, 2, yoki 3)'
+            ),
+            openapi.Parameter(
+                name='patient_data', in_=openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
+                description='(1-qadam) JSON formatidagi shaxsiy ma\'lumotlar.'
+            ),
+            openapi.Parameter(
+                name='profile_data', in_=openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
+                description='(2-qadam) JSON formatidagi tibbiy ma\'lumotlar.'
+            ),
+            openapi.Parameter(
+                name='file', in_=openapi.IN_FORM, type=openapi.TYPE_FILE, required=False,
+                description='(3-qadam) Tibbiy hujjat.'
+            ),
+            # --- 👇 QO'SHILGAN YANGI PARAMETR 👇 ---
+            openapi.Parameter(
+                name='patient_id',
                 in_=openapi.IN_FORM,
                 type=openapi.TYPE_INTEGER,
-                description='Step number (1, 2, or 3)',
-                required=True,
-                example=1
-            ),
-            openapi.Parameter(
-                name='patient_data',
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_STRING,
-                description='(Step 1) Serialized JSON object with patient personal data. Example: {"full_name": "John Doe", "phone_number": "+998901234567", ...}',
-                required=False
-            ),
-            openapi.Parameter(
-                name='profile_data',
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_STRING,
-                description='(Step 2) Serialized JSON object with medical history. Example: {"complaints": "Fever and cough", "previous_diagnosis": "Cold"}',
-                required=False
-            ),
-            openapi.Parameter(
-                name='file',
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_FILE,
-                description='(Step 3) Upload a file (e.g., medical document)',
-                required=False
+                required=False,
+                description="Operator 2- yoki 3-qadamni bajarayotganda, qaysi bemorga tegishli ekanligini bildirish uchun majburiy."
             ),
         ],
-        # --- XATOLIKNI TUZATISH TUGADI ---
-        responses={
-            200: openapi.Response('Success', ApplicationStepSerializer),
-            400: 'Bad Request - Invalid step or missing required fields'
-        }
+        request_body=None,
+        responses={200: ApplicationSerializer, 400: 'Xato so\'rov'}
     )
     def post(self, request, *args, **kwargs):
-        user = request.user
-        step = request.data.get("step")
-        if not step or not str(step).isdigit() or not 1 <= int(step) <= 3:
-            return Response({"error": "Invalid or missing step. Use 1, 2, or 3."}, status=status.HTTP_400_BAD_REQUEST)
+        requesting_user = request.user # So'rovni kim yuborayotgani
 
-        step = int(step) # string dan int ga o'tkazish
+        try:
+            step = int(request.data.get("step"))
+            if step not in [1, 2, 3]: raise ValueError
+        except (ValueError, TypeError):
+            return Response({"error": "Majburiy 'step' parametri (1, 2, yoki 3) kiritilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
 
-        application, created = Application.objects.get_or_create(
-            patient=user,
-            defaults={"status": "new", "application_id": f"APP_{user.id}_{timezone.now().strftime('%Y%m%d%H%M%S')}"}
-        )
+        # -----------------------------------------------------------
+        # --- Barcha qadamlar uchun umumiy bemor va ariza topish logikasi ---
+        # -----------------------------------------------------------
+        patient_user = None
 
-        profile, profile_created = PatientProfile.objects.get_or_create(
-            user=user,
-            defaults={
-                "full_name": user.get_full_name() or user.phone_number or "Noma'lum",
-                "gender": "male",
-                "complaints": "",
-                "previous_diagnosis": "",
-            }
-        )
+        if getattr(requesting_user, 'role', 'user') in ['operator', 'admin']:
+            # Operator uchun bemorni `patient_data` yoki `patient_id` orqali topamiz
+            if step == 1:
+                patient_data_str = request.data.get("patient_data")
+                if not patient_data_str: return Response({"error": "1-qadam uchun 'patient_data' majburiy."}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    patient_data = json.loads(patient_data_str)
+                    phone_number = patient_data.get("phone_number")
+                    if not phone_number: return Response({"error": "Telefon raqami majburiy."}, status=status.HTTP_400_BAD_REQUEST)
+                    patient_user, _ = User.objects.get_or_create(phone_number=phone_number, defaults={'phone_number': phone_number, 'role': 'user'})
+                except json.JSONDecodeError: return Response({"error": "'patient_data' noto'g'ri JSON formatida."}, status=status.HTTP_400_BAD_REQUEST)
+            else: # step 2 yoki 3 uchun
+                patient_id = request.data.get("patient_id")
+                if not patient_id: return Response({"error": "Operator uchun 'patient_id' majburiy."}, status=status.HTTP_400_BAD_REQUEST)
+                patient_user = get_object_or_404(User, id=patient_id, role='user')
+        else: # Bemor o'zi uchun
+            patient_user = requesting_user
 
-        if step == 1:
-            # So'rovdan kelgan ma'lumotlarni olish (ular endi form-data'da)
-            patient_data_str = request.data.get("patient_data")
-            if not patient_data_str:
-                return Response({"error": "patient_data is required for step 1."}, status=status.HTTP_400_BAD_REQUEST)
+        # Bemor uchun ariza va profilni topamiz yoki yaratamiz
+        application, _ = Application.objects.get_or_create(patient=patient_user)
+        profile, _ = PatientProfile.objects.get_or_create(user=patient_user)
 
-            import json
+        # -----------------------------------------------------------
+        # --- Har bir ma'lumotni alohida tekshirib, qayta ishlaymiz ---
+        # -----------------------------------------------------------
+
+        # 1-qadam ma'lumotlari (patient_data)
+        patient_data_str = request.data.get("patient_data")
+        if patient_data_str:
             try:
                 patient_data = json.loads(patient_data_str)
-            except json.JSONDecodeError:
-                return Response({"error": "Invalid JSON format for patient_data."}, status=status.HTTP_400_BAD_REQUEST)
+                profile.full_name = patient_data.get("full_name", profile.full_name)
+                profile.save()
+                patient_user.first_name = patient_data.get("first_name", patient_user.first_name)
+                patient_user.last_name = patient_data.get("last_name", patient_user.last_name)
+                patient_user.save()
+            except json.JSONDecodeError: pass # Xato bo'lsa, o'tkazib yuboramiz
 
-            profile.full_name = patient_data.get("full_name", profile.full_name)
-            profile.passport = patient_data.get("passport", profile.passport)
-            profile.dob = patient_data.get("dob", profile.dob)
-            profile.gender = patient_data.get("gender", profile.gender)
-            profile.email = patient_data.get("email", profile.email)
-            profile.save()
-
-            user.first_name = patient_data.get("first_name", user.first_name)
-            user.last_name = patient_data.get("last_name", user.last_name)
-            user.email = patient_data.get("email", user.email)
-            user.phone_number = patient_data.get("phone_number", user.phone_number)
-            user.save()
-
-        elif step == 2:
-            profile_data_str = request.data.get("profile_data")
-            if not profile_data_str:
-                return Response({"error": "profile_data is required for step 2."}, status=status.HTTP_400_BAD_REQUEST)
-
-            import json
+        # 2-qadam ma'lumotlari (profile_data)
+        profile_data_str = request.data.get("profile_data")
+        if profile_data_str:
             try:
-                profile_data = json.loads(profile_data_str)
-            except json.JSONDecodeError:
-                return Response({"error": "Invalid JSON format for profile_data."}, status=status.HTTP_400_BAD_REQUEST)
+                data = json.loads(profile_data_str)
+                profile.complaints = data.get('complaints', profile.complaints)
+                profile.save()
+                application.complaint = profile.complaints
+                application.save()
+            except json.JSONDecodeError: pass
 
-            profile.complaints = profile_data.get("complaints", profile.complaints)
-            profile.previous_diagnosis = profile_data.get("previous_diagnosis", profile.previous_diagnosis)
-            profile.save()
-            application.complaint = profile.complaints
-            application.diagnosis = profile.previous_diagnosis
-            application.save()
-
-        elif step == 3:
-            file = request.FILES.get("file")
-            if file:
-                # Patient (Medmapp) recordini yaratish
-                patient_record, _ = Patient.objects.get_or_create(profile=profile)
-                PatientDocument.objects.create(
-                    patient=patient_record,
-                    file=file,
-                    uploaded_by=user,
-                    source_type="patient"
-                )
-
-        serializer = ApplicationStepSerializer(application, context={"request": request})
+        # 3-qadam ma'lumotlari (file)
+        file = request.FILES.get("file")
+        if file:
+            patient_record, _ = Patient.objects.get_or_create(profile=profile)
+            document = Document.objects.create(
+                patient=patient_record,
+                file=file,
+                uploaded_by=requesting_user,
+                source_type="operator" if getattr(requesting_user, 'role', 'user') != 'user' else "patient"
+            )
+            # 🔗 Application bilan bog‘lash
+            application.documents.add(document)
+        serializer = ApplicationSerializer(application, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 class PatientAvatarUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -630,26 +506,8 @@ class PatientAvatarUpdateView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class StageListView(generics.ListCreateAPIView):
-    queryset = Stage.objects.order_by("order")
-    serializer_class = StageSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
 
-class TagListView(generics.ListCreateAPIView):
-    queryset = Tag.objects.all()
-    serializer_class = TagSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-
-class TagDeleteView(generics.DestroyAPIView):
-    queryset = Tag.objects.all()
-    serializer_class = TagSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def perform_destroy(self, instance):
-        logger.info(f"Deleted Tag: {instance.name}")
-        super().perform_destroy(instance)
 
 
 class PatientDeleteView(APIView):

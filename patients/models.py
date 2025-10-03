@@ -6,26 +6,6 @@ from django.core.validators import RegexValidator
 User = get_user_model()
 
 
-class Stage(models.Model):
-    title = models.CharField(max_length=50)
-    code_name = models.CharField(max_length=20, unique=True)
-    order = models.PositiveIntegerField(default=0)
-    color = models.CharField(max_length=20, default="primary")
-
-    class Meta:
-        ordering = ["order"]
-
-    def __str__(self):
-        return self.title
-
-
-class Tag(models.Model):
-    name = models.CharField(max_length=20)
-    color = models.CharField(max_length=20, default="primary")
-
-    def __str__(self):
-        return self.name
-
 
 class PatientProfile(models.Model):
     GENDER_CHOICES = [("male", "Erkak"), ("female", "Ayol")]
@@ -77,12 +57,10 @@ class Patient(models.Model):
     email = models.EmailField(blank=True, null=True)
     region = models.CharField(max_length=100, blank=True, null=True)
     source = models.CharField(max_length=50, blank=True, null=True)
-    stage = models.ForeignKey(
-        Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients"
-    )
-    tag = models.ForeignKey(
-        Tag, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients"
-    )
+    # stage = models.ForeignKey(
+    #     Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients"
+    # )
+
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -102,24 +80,6 @@ class Patient(models.Model):
     def __str__(self):
         return self.full_name or (self.profile.user.get_full_name() if self.profile else "No name")
 
-
-class PatientHistory(models.Model):
-    patient = models.ForeignKey(
-        Patient, on_delete=models.CASCADE, related_name="history"
-    )
-    author = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="patient_history", null=True
-    )
-    comment = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Tarix"
-        verbose_name_plural = "Tarixlar"
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"{self.patient.full_name} - {self.comment[:30]}"
 
 
 class PatientDocument(models.Model):
