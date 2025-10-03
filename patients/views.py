@@ -321,121 +321,107 @@ class PatientDocumentDeleteView(generics.DestroyAPIView):
 
 
 class ConsultationFormView(APIView):
-    # --- RUXSATNI O'ZGARTIRAMIZ: Endi operatorlar ham kira oladi ---
-    # Bu yerga IsAdminOrOperator permission klassini qo'shsangiz ham bo'ladi
-    # yoki IsAuthenticated qolib, ichkarida rol tekshiriladi.
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
-        operation_description="Bemor yoki Operator uchun 3-bosqichli ariza yuborish.",
+        operation_description="Bemor yoki Operator uchun yagona konsultatsiya anketasini yuborish.",
         manual_parameters=[
             openapi.Parameter(
-                name='step', in_=openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=True,
-                description='Jarayon bosqichi (1, 2, yoki 3)'
+                name='patient_id', in_=openapi.IN_FORM, type=openapi.TYPE_INTEGER, required=False,
+                description="MAVJUD bemor uchun so'rov yuborayotganda operator tomonidan ishlatiladi."
             ),
             openapi.Parameter(
                 name='patient_data', in_=openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
-                description='(1-qadam) JSON formatidagi shaxsiy ma\'lumotlar.'
+                description='YANGI bemor uchun JSON formatidagi shaxsiy ma\'lumotlar (ichida "phone_number" bo\'lishi shart).'
             ),
             openapi.Parameter(
                 name='profile_data', in_=openapi.IN_FORM, type=openapi.TYPE_STRING, required=False,
-                description='(2-qadam) JSON formatidagi tibbiy ma\'lumotlar.'
+                description='Tibbiy ma\'lumotlar (shikoyatlar, avvalgi tashxis).'
             ),
             openapi.Parameter(
                 name='file', in_=openapi.IN_FORM, type=openapi.TYPE_FILE, required=False,
-                description='(3-qadam) Tibbiy hujjat.'
-            ),
-            # --- 👇 QO'SHILGAN YANGI PARAMETR 👇 ---
-            openapi.Parameter(
-                name='patient_id',
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_INTEGER,
-                required=False,
-                description="Operator 2- yoki 3-qadamni bajarayotganda, qaysi bemorga tegishli ekanligini bildirish uchun majburiy."
+                description='Tibbiy hujjat (tahlil, rentgen va hk).'
             ),
         ],
         request_body=None,
         responses={200: ApplicationSerializer, 400: 'Xato so\'rov'}
     )
     def post(self, request, *args, **kwargs):
-        requesting_user = request.user # So'rovni kim yuborayotgani
-
-        try:
-            step = int(request.data.get("step"))
-            if step not in [1, 2, 3]: raise ValueError
-        except (ValueError, TypeError):
-            return Response({"error": "Majburiy 'step' parametri (1, 2, yoki 3) kiritilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # -----------------------------------------------------------
-        # --- Barcha qadamlar uchun umumiy bemor va ariza topish logikasi ---
-        # -----------------------------------------------------------
+        requesting_user = request.user
         patient_user = None
 
         if getattr(requesting_user, 'role', 'user') in ['operator', 'admin']:
-            # Operator uchun bemorni `patient_data` yoki `patient_id` orqali topamiz
-            if step == 1:
-                patient_data_str = request.data.get("patient_data")
-                if not patient_data_str: return Response({"error": "1-qadam uchun 'patient_data' majburiy."}, status=status.HTTP_400_BAD_REQUEST)
+            patient_id = request.data.get("patient_id")
+            patient_data_str = request.data.get("patient_data")
+
+            if patient_id:
+                patient_user = get_object_or_404(User, id=patient_id, role='user')
+            elif patient_data_str:
                 try:
                     patient_data = json.loads(patient_data_str)
                     phone_number = patient_data.get("phone_number")
-                    if not phone_number: return Response({"error": "Telefon raqami majburiy."}, status=status.HTTP_400_BAD_REQUEST)
-                    patient_user, _ = User.objects.get_or_create(phone_number=phone_number, defaults={'phone_number': phone_number, 'role': 'user'})
-                except json.JSONDecodeError: return Response({"error": "'patient_data' noto'g'ri JSON formatida."}, status=status.HTTP_400_BAD_REQUEST)
-            else: # step 2 yoki 3 uchun
-                patient_id = request.data.get("patient_id")
-                if not patient_id: return Response({"error": "Operator uchun 'patient_id' majburiy."}, status=status.HTTP_400_BAD_REQUEST)
-                patient_user = get_object_or_404(User, id=patient_id, role='user')
-        else: # Bemor o'zi uchun
+                    if not phone_number:
+                        return Response({"error": "Yangi bemor uchun 'patient_data' ichida telefon raqami majburiy."}, status=status.HTTP_400_BAD_REQUEST)
+
+                    patient_user, _ = User.objects.get_or_create(
+                        phone_number=phone_number,
+                        defaults={'phone_number': phone_number, 'role': 'user'}
+                    )
+                except json.JSONDecodeError:
+                    return Response({"error": "'patient_data' noto'g'ri JSON formatida."}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response({"error": "Operator uchun 'patient_id' (mavjud bemor uchun) yoki 'patient_data' (yangi bemor uchun) majburiy."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
             patient_user = requesting_user
 
-        # Bemor uchun ariza va profilni topamiz yoki yaratamiz
         application, _ = Application.objects.get_or_create(patient=patient_user)
         profile, _ = PatientProfile.objects.get_or_create(user=patient_user)
 
-        # -----------------------------------------------------------
-        # --- Har bir ma'lumotni alohida tekshirib, qayta ishlaymiz ---
-        # -----------------------------------------------------------
-
-        # 1-qadam ma'lumotlari (patient_data)
         patient_data_str = request.data.get("patient_data")
         if patient_data_str:
             try:
                 patient_data = json.loads(patient_data_str)
                 profile.full_name = patient_data.get("full_name", profile.full_name)
+                profile.passport = patient_data.get("passport", profile.passport)
+                profile.dob = patient_data.get("dob", profile.dob)
+                profile.gender = patient_data.get("gender", profile.gender)
+                profile.email = patient_data.get("email", profile.email)
                 profile.save()
+
                 patient_user.first_name = patient_data.get("first_name", patient_user.first_name)
                 patient_user.last_name = patient_data.get("last_name", patient_user.last_name)
+                patient_user.email = patient_data.get("email", patient_user.email)
                 patient_user.save()
-            except json.JSONDecodeError: pass # Xato bo'lsa, o'tkazib yuboramiz
+            except json.JSONDecodeError:
+                pass
 
-        # 2-qadam ma'lumotlari (profile_data)
         profile_data_str = request.data.get("profile_data")
         if profile_data_str:
             try:
                 data = json.loads(profile_data_str)
                 profile.complaints = data.get('complaints', profile.complaints)
+                profile.previous_diagnosis = data.get('previous_diagnosis', profile.previous_diagnosis)
                 profile.save()
                 application.complaint = profile.complaints
+                application.diagnosis = data.get('previous_diagnosis', application.diagnosis)
                 application.save()
-            except json.JSONDecodeError: pass
 
-        # 3-qadam ma'lumotlari (file)
+            except json.JSONDecodeError:
+                pass
+
         file = request.FILES.get("file")
         if file:
             patient_record, _ = Patient.objects.get_or_create(profile=profile)
-            document = Document.objects.create(
+            PatientDocument.objects.create(
                 patient=patient_record,
                 file=file,
                 uploaded_by=requesting_user,
                 source_type="operator" if getattr(requesting_user, 'role', 'user') != 'user' else "patient"
             )
-            # 🔗 Application bilan bog‘lash
-            application.documents.add(document)
+
         serializer = ApplicationSerializer(application, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 class PatientAvatarUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
