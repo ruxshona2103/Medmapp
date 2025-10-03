@@ -37,6 +37,20 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOperatorOrReadOnly]
 
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                name="stage",
+                in_=openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                required=False,
+                description="Stage bo'yicha filter (Stage ID)"
+            ),
+        ]
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Application.objects.none()
@@ -45,14 +59,15 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return Application.objects.none()
 
-        # Asosiy queryset'ni aniqlaymiz
         if getattr(user, 'role', None) == "user":
             queryset = Application.objects.filter(patient=user)
         else:
             queryset = Application.objects.all()
 
-        # --- O'ZGARTIRILGAN QATOR: Samaradorlikni oshiramiz ---
-        # Barcha arizalar uchun hujjatlar va tarixni bitta so'rovda olamiz
+        stage_id = self.request.query_params.get('stage')
+        if stage_id:
+            queryset = queryset.filter(stage__id=stage_id)  # ForeignKey bo'lsa __id ishlatamiz
+
         return queryset.prefetch_related('documents', 'history')
 
 class DocumentCreateView(generics.CreateAPIView):

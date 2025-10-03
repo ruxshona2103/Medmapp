@@ -3,7 +3,7 @@
 # consultations/signals.py
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import Message, MessageReadStatus, Participant
+from .models import Conversation, Message, MessageReadStatus, Participant
 from django.utils import timezone
 
 
