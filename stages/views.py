@@ -15,6 +15,6 @@ class StageViewSet(viewsets.ModelViewSet):
     Bosqichlarni (Stages) boshqarish uchun API.
     Faqat Admin va Operatorlar uchun ruxsat berilgan.
     """
-    queryset = Stage.objects.all()
+    queryset = Stage.objects.all().order_by('id')
     serializer_class = StageSerializer
     permission_classes = [IsAdminOrOperator]
