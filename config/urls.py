@@ -6,7 +6,7 @@ from django.shortcuts import redirect
 from rest_framework import permissions
 from django.conf import settings
 from django.conf.urls.static import static
-from config.api_docs import RoleAwareGenerator   # 👈
+from config.api_docs import RoleAwareGenerator
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -19,6 +19,7 @@ schema_view = get_schema_view(
     ),
     public=True,
     permission_classes=[permissions.AllowAny],
+    generator_class=RoleAwareGenerator,
 )
 
 urlpatterns = [
