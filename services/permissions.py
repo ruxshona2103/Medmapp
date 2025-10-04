@@ -1,22 +1,33 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
-# foydalanuvchi faqat oziga tegishlilani kora olishi uchun 
 class IsOwner(BasePermission):
+    """
+    Foydalanuvchi faqat o'ziga tegishli obyektlarni ko'ra olishi uchun.
+    """
     def has_object_permission(self, request, view, obj):
-        return getattr(obj, "user_id", None) == getattr(request.user, "id", None)
+        user_id = getattr(request.user, "id", None)
+        obj_user_id = getattr(obj, "user_id", None)
+        return user_id is not None and obj_user_id == user_id
 
-# Admin/SuperAdmin/Operator CRUD qilaa oladi  Patient faqat o‘qiy oladi.
+
 class HotelPermission(BasePermission):
+    """
+    Admin/SuperAdmin/Operator CRUD qilishi mumkin.
+    Patient faqat ko'rishi mumkin.
+    """
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        return request.user.is_authenticated and request.user.role in ["admin", "superadmin", "operator"]
+        return getattr(request.user, "is_authenticated", False) and getattr(request.user, "role", None) in ["admin", "superadmin", "operator"]
 
-# Patient  create, view faqat oz buyurtmasi. Admin/Operator hammasini korish
+
 class BookingPermission(BasePermission):
+    """
+    Patient: faqat o'z buyurtmasini ko'ra oladi.
+    Admin/Operator/SuperAdmin: hammasini ko'ra oladi va CRUD qilishi mumkin.
+    """
     def has_object_permission(self, request, view, obj):
-        if request.method in ["admin", "superadmin", "operator"]:
+        role = getattr(request.user, "role", None)
+        if role in ["admin", "superadmin", "operator"]:
             return True
-        return obj.user == request.user
-
-
+        return getattr(obj, "user", None) == getattr(request.user, "id", None)
