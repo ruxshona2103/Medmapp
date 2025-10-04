@@ -37,12 +37,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         queryset = Application.objects.all()
 
+        # ⚙️ Agar stage NULL bo‘lsa, birinchi stage’ni biriktirib qo‘yadi
         default_stage = Stage.objects.first()
-        Application.objects.filter(stage__isnull=True).update(stage=default_stage)
+        if default_stage:
+            Application.objects.filter(stage__isnull=True).update(stage=default_stage)
 
+        # Foydalanuvchi roli bo‘yicha filtr
         if getattr(user, 'role', 'user') == 'user':
             queryset = queryset.filter(patient=user)
 
+        # stage=? orqali filtr
         stage_id = self.request.query_params.get('stage')
         if stage_id:
             queryset = queryset.filter(stage__id=stage_id)
@@ -50,13 +54,10 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         return queryset.select_related('patient', 'stage').prefetch_related('documents', 'history')
 
     def perform_create(self, serializer):
-      user = self.request.user
-      default_stage = Stage.objects.filter(code_name='stage_default').first() or Stage.objects.first()
+        user = self.request.user
+        default_stage = Stage.objects.filter(code_name='stage_default').first() or Stage.objects.first()
+        serializer.save(patient=user, stage=default_stage)
 
-      serializer.save(
-        patient=user,
-        stage=serializer.validated_data.get('stage', default_stage)
-    )
 
 
 class DocumentListCreateView(generics.ListCreateAPIView):
