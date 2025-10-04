@@ -12,15 +12,6 @@ from .permissions import IsAdminOrOperatorOrReadOnly
 from .serializers import ApplicationSerializer, DocumentSerializer
 from stages.models import Stage
 
-from stages.models import Stage
-
-from rest_framework import viewsets, permissions
-from drf_yasg import openapi
-from drf_yasg.utils import swagger_auto_schema
-from .models import Application, Stage
-from .serializers import ApplicationSerializer
-from .permissions import IsAdminOrOperatorOrReadOnly
-
 
 class ApplicationViewSet(viewsets.ModelViewSet):
     """
@@ -61,6 +52,11 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         Agar stage NULL bo‘lsa — avtomatik ravishda birinchi stage’ni biriktiradi.
         """
         user = self.request.user
+
+        # ✅ Swagger yoki login qilinmagan user bo‘lsa, bo‘sh queryset qaytariladi
+        if getattr(self, 'swagger_fake_view', False) or not user.is_authenticated:
+            return Application.objects.none()
+
         queryset = Application.objects.all()
 
         # ⚙️ Agar stage NULL bo‘lsa, birinchi stage’ni ulab qo‘yish
@@ -99,7 +95,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
 class DocumentListCreateView(generics.ListCreateAPIView):
     """
-    Muayyan arizaga tegishli hujjatlarni olish (GET) va yangi hujjat yuklash (POST).
+    📄 Muayyan arizaga tegishli hujjatlarni olish (GET) va yangi hujjat yuklash (POST).
     """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -109,6 +105,7 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         application_id = self.kwargs.get("application_id")
         user = self.request.user
 
+        # 👤 Oddiy foydalanuvchi faqat o‘z arizalaridagi hujjatlarni ko‘ra oladi
         if getattr(user, 'role', 'user') == 'user':
             return Document.objects.filter(application__id=application_id, application__patient=user)
         else:
@@ -135,8 +132,11 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         application = get_object_or_404(Application, **query_params)
         serializer.save(application=application, uploaded_by=user)
 
+
 class ChangeApplicationStageView(APIView):
-    """Arizaning bosqichini o'zgartirish (faqat admin/operator uchun)."""
+    """
+    🔄 Arizaning bosqichini o‘zgartirish (faqat admin/operator uchun).
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
@@ -151,9 +151,12 @@ class ChangeApplicationStageView(APIView):
     )
     def patch(self, request, application_id):
         user = request.user
-        if getattr(user, 'role', 'user') not in ['admin', 'operator']:
-            raise PermissionDenied("Sizda bosqichni o'zgartirishga ruxsat yo'q.")
 
+        # 👮‍♂️ Faqat admin/operatorga ruxsat
+        if getattr(user, 'role', 'user') not in ['admin', 'operator']:
+            raise PermissionDenied("Sizda bosqichni o‘zgartirishga ruxsat yo‘q.")
+
+        # 🧾 Application va yangi bosqichni topish
         application = get_object_or_404(Application, id=application_id)
         new_stage_id = request.data.get("new_stage_id")
         if not new_stage_id:
@@ -161,9 +164,12 @@ class ChangeApplicationStageView(APIView):
 
         new_stage = get_object_or_404(Stage, id=new_stage_id)
         old_stage = application.stage
+
+        # 🔁 Bosqichni yangilash
         application.stage = new_stage
         application.save(update_fields=["stage"])
 
+        # 📝 Tarixga yozish
         comment = request.data.get("comment", f"Bosqich o‘zgartirildi: {getattr(old_stage, 'name', '—')} → {new_stage.name}")
         ApplicationHistory.objects.create(application=application, author=user, comment=comment)
 
