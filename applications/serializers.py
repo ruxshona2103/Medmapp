@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+
+from stages.models import Stage
 from .models import Application, Document, ApplicationHistory
 from stages.serializers import StageSerializer
 
@@ -26,7 +28,11 @@ class ApplicationSerializer(serializers.ModelSerializer):
     patient = UserSerializer(read_only=True)
     history = ApplicationHistorySerializer(many=True, read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
-    stage = StageSerializer(read_only=True)
+    # stage ni yozish uchun ruxsat beramiz (read_only emas!)
+    stage = serializers.PrimaryKeyRelatedField(
+        queryset=Stage.objects.all(),
+        required=False
+    )
 
     class Meta:
         model = Application

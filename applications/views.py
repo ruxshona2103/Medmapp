@@ -50,16 +50,13 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         return queryset.select_related('patient', 'stage').prefetch_related('documents', 'history')
 
     def perform_create(self, serializer):
-        # userni qo'shamiz
-        user = self.request.user
+      user = self.request.user
+      default_stage = Stage.objects.filter(code_name='stage_default').first() or Stage.objects.first()
 
-        # Stage yo'q bo'lsa, default stage ni topamiz
-        default_stage = Stage.objects.filter(code_name='stage_default').first()
-        if not default_stage:
-            # agar default stage mavjud bo'lmasa, birinchi stage ni oladi
-            default_stage = Stage.objects.first()
-
-        serializer.save(patient=user, stage=default_stage)
+      serializer.save(
+        patient=user,
+        stage=serializer.validated_data.get('stage', default_stage)
+    )
 
 
 class DocumentListCreateView(generics.ListCreateAPIView):
