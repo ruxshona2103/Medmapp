@@ -27,15 +27,16 @@ class StageViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrOperator]
 
     def list(self, request, *args, **kwargs):
-        stages = Stage.objects.all().order_by('id')
-        orders = list(stages.values_list('order', flat=True))
+      stages = list(Stage.objects.all().order_by('id'))
+      orders = [s.order for s in stages]
 
-        if all(o == 0 for o in orders) or len(set(orders)) != len(orders):
-            for index, stage in enumerate(stages, start=1):
-                stage.order = index
-                stage.save(update_fields=['order'])
-            print("✅ Stage orderlar avtomatik yangilandi")
+    # faqat 0 yoki dublikat bo‘lsa yangilash
+      if all(o == 0 for o in orders) or len(set(orders)) != len(orders):
+        for index, stage in enumerate(stages, start=1):
+            Stage.objects.filter(pk=stage.pk).update(order=index)
+        # print("✅ Stage orderlar avtomatik yangilandi")
 
-        queryset = Stage.objects.all().order_by('order')
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+      queryset = Stage.objects.all().order_by('order')
+      serializer = self.get_serializer(queryset, many=True)
+      return Response(serializer.data)
+
