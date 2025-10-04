@@ -14,11 +14,32 @@ from stages.models import Stage
 
 from stages.models import Stage
 
+from rest_framework import viewsets, permissions
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
+from .models import Application, Stage
+from .serializers import ApplicationSerializer
+from .permissions import IsAdminOrOperatorOrReadOnly
+
+
 class ApplicationViewSet(viewsets.ModelViewSet):
+    """
+    🧾 Murojaatlarni (Arizalarni) boshqarish uchun ViewSet.
+
+    🔍 Qo'llab-quvvatlaydigan funksiyalar:
+      - GET /applications/?stage=<ID> → Stage ID bo‘yicha filtrlash
+      - POST /applications/ → Yangi murojaat yaratish (default stage bilan)
+
+    Faqat autentifikatsiya qilingan foydalanuvchilar uchun ruxsat.
+    Admin va Operatorlar barcha ma’lumotlarni ko‘ra oladi.
+    Oddiy user esa faqat o‘z murojaatlarini ko‘radi.
+    """
+
     queryset = Application.objects.all()
     serializer_class = ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOperatorOrReadOnly]
 
+    # --- 🔹 Swagger uchun parametr qo‘shamiz ---
     @swagger_auto_schema(
         manual_parameters=[
             openapi.Parameter(
@@ -26,38 +47,54 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 in_=openapi.IN_QUERY,
                 type=openapi.TYPE_INTEGER,
                 required=False,
-                description="Bosqich (Stage) ID'si bo‘yicha filtrlash"
+                description="Bosqich (Stage) ID'si bo‘yicha filtrlash. Masalan: ?stage=45"
             ),
         ]
     )
     def list(self, request, *args, **kwargs):
+        """Murojaatlar ro‘yxatini qaytaradi."""
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
+        """
+        🔍 Foydalanuvchining roliga qarab va stage parametri asosida filtrlaydi.
+        Agar stage NULL bo‘lsa — avtomatik ravishda birinchi stage’ni biriktiradi.
+        """
         user = self.request.user
         queryset = Application.objects.all()
 
-        # ⚙️ Agar stage NULL bo‘lsa, birinchi stage’ni biriktirib qo‘yadi
-        default_stage = Stage.objects.first()
+        # ⚙️ Agar stage NULL bo‘lsa, birinchi stage’ni ulab qo‘yish
+        default_stage = Stage.objects.order_by('id').first()
         if default_stage:
             Application.objects.filter(stage__isnull=True).update(stage=default_stage)
 
-        # Foydalanuvchi roli bo‘yicha filtr
+        # 👤 Oddiy user faqat o‘z murojaatlarini ko‘radi
         if getattr(user, 'role', 'user') == 'user':
             queryset = queryset.filter(patient=user)
 
-        # stage=? orqali filtr
+        # 🔎 stage=? orqali filtrlash
         stage_id = self.request.query_params.get('stage')
         if stage_id:
             queryset = queryset.filter(stage__id=stage_id)
 
+        # 🧠 Samaradorlik uchun related obyektlarni bir so‘rovda olish
         return queryset.select_related('patient', 'stage').prefetch_related('documents', 'history')
 
     def perform_create(self, serializer):
+        """
+        🆕 Yangi Application yaratilganda:
+        - Foydalanuvchini `patient` sifatida ulaydi
+        - Stage bo‘lmasa → `code_name='yangi'` yoki birinchi stage’ni oladi
+        """
         user = self.request.user
-        default_stage = Stage.objects.filter(code_name='stage_default').first() or Stage.objects.first()
-        serializer.save(patient=user, stage=default_stage)
 
+        # Default stage aniqlash: avval 'yangi', bo‘lmasa birinchi stage
+        default_stage = (
+            Stage.objects.filter(code_name='yangi').first()
+            or Stage.objects.order_by('id').first()
+        )
+
+        serializer.save(patient=user, stage=default_stage)
 
 
 class DocumentListCreateView(generics.ListCreateAPIView):
