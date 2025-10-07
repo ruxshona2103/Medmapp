@@ -1,16 +1,7 @@
-# patients/permissions.py
-from rest_framework import permissions
+from rest_framework.permissions import BasePermission
 
-
-class IsOperatorOrHigher(permissions.BasePermission):
+class IsOperatorOrAdmin(BasePermission):
+    """Namunaviy permission: kerak bo'lsa kengaytirasiz."""
     def has_permission(self, request, view):
-        return request.user.role in ["operator", "admin", "superadmin"]
-
-
-class IsOwnerOrOperator(permissions.BasePermission):
-    def has_object_permission(self, request, view, obj):
-        if request.user.role in ["admin", "superadmin", "operator"]:
-            return True
-        if request.user.role == "operator" and obj.created_by == request.user:
-            return True
-        return False
+        role = getattr(getattr(request, "user", None), "role", None)
+        return role in ["admin", "operator"]
