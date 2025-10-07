@@ -1,25 +1,21 @@
-# patients/urls.py
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from .views import (
-    ConsultationFormView,
-    PatientListView,
-    PatientCreateView,
-    PatientMeView,
-    OperatorMeView,
-    PatientDocumentCreateView,
-    PatientDocumentDeleteView,
-    PatientAvatarUpdateView,
-    PatientDeleteView,
+    PatientViewSet,
+    PatientDocumentViewSet,
+    ResponseLettersViewSet,
+    ContractApproveViewSet,
+    MeProfileView,
 )
 
+router = DefaultRouter()
+router.register(r"patients", PatientViewSet, basename="patient")
+router.register(r"response-letters", ResponseLettersViewSet, basename="response-letters")
+router.register(r"contracts", ContractApproveViewSet, basename="contracts")
+
 urlpatterns = [
-    path("", PatientListView.as_view(), name="patient-list"),
-    path("consultation/", ConsultationFormView.as_view(), name="consultation-form"),
-    path("create/", PatientCreateView.as_view(), name="patient-create"),
-    path("me/", PatientMeView.as_view(), name="patient-me"),
-    path("operators/me/", OperatorMeView.as_view(), name="operator-me"),
-    path("<int:patient_id>/documents/", PatientDocumentCreateView.as_view(), name="document-create"),
-    path("documents/<int:pk>/", PatientDocumentDeleteView.as_view(), name="document-delete"),
-    path("avatar/", PatientAvatarUpdateView.as_view(), name="avatar-update"),
-    path("delete/", PatientDeleteView.as_view(), name="patient-delete"),
+    path("", include(router.urls)),
+    path("patients/<int:patient_pk>/documents/", PatientDocumentViewSet.as_view({"post": "create"}), name="patient-docs-create"),
+    path("documents/<int:pk>/", PatientDocumentViewSet.as_view({"delete": "destroy"}), name="patient-docs-delete"),
+    path("me/profile/", MeProfileView.as_view(), name="me-profile"),
 ]
