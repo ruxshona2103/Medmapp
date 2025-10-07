@@ -10,9 +10,9 @@ from drf_yasg import openapi
 from .models import Application, ApplicationHistory, Document
 from .permissions import IsAdminOrOperatorOrReadOnly
 from .serializers import ApplicationSerializer, DocumentSerializer
-from stages.models import Stage
+from core.models import Stage
 
-from stages.models import Stage
+from core.models import Stage
 
 from rest_framework import viewsets, permissions
 from drf_yasg import openapi
