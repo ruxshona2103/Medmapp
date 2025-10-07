@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('patients', '0001_initial'),
-        ('stages', '0001_initial'),
+        ('core', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -30,7 +30,7 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(auto_now=True, verbose_name='Yangilangan vaqt')),
                 ('linked_patient', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='applications', to='patients.patient', verbose_name='Bemor Profili')),
                 ('patient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='applications', to=settings.AUTH_USER_MODEL, verbose_name='Bemor')),
-                ('stage', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='applications', to='stages.stage', verbose_name='Bosqich')),
+                ('stage', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='applications', to='core.stage', verbose_name='Bosqich')),
             ],
             options={
                 'verbose_name': 'Ariza',
