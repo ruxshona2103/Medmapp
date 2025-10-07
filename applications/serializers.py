@@ -1,9 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
-from stages.models import Stage
+from core.models import Stage
 from .models import Application, Document, ApplicationHistory
-from stages.serializers import StageSerializer
+from core.serializers import StageSerializer
 
 User = get_user_model()
 
