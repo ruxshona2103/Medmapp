@@ -1,111 +1,84 @@
-# patients/models.py
 from django.db import models
-from django.contrib.auth import get_user_model
-from django.core.validators import RegexValidator
-
-User = get_user_model()
-
-
-
-class PatientProfile(models.Model):
-    GENDER_CHOICES = [("male", "Erkak"), ("female", "Ayol")]
-
-    user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name="patient_profile",
-        verbose_name="Foydalanuvchi",
-        blank=True,
-        null=True
-
-    )
-    passport = models.CharField(max_length=20, null=True, blank=True)
-    dob = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default="male")
-    complaints = models.TextField(blank=True,null=True, default="")
-    previous_diagnosis = models.TextField(blank=True, default="")
-    full_name = models.CharField(max_length=255, blank=True, null=True)
-    email = models.EmailField(blank=True, null=True)
-    class Meta:
-        verbose_name = "Bemor Profili"
-
-    def __str__(self):
-        return f"{self.user.get_full_name() or self.user.username} ({self.passport or 'Passportsiz'})"
+from django.conf import settings
+from django.core.validators import FileExtensionValidator
+from core.models import Stage, Tag
 
 
 class Patient(models.Model):
-    profile = models.ForeignKey(
-        PatientProfile,
-        on_delete=models.CASCADE,
-        related_name="patient_records",
-        verbose_name="Bemor profili",
-        null=True,
-        blank=True
-    )
-    full_name = models.CharField(max_length=200, blank=True, null=True)
-    phone = models.CharField(
-        max_length=20,
-        validators=[
-            RegexValidator(
-                regex=r"^\+998\d{9}$",
-                message="Telefon +998XXXXXXXXX ko‘rinishida bo‘lsin",
-            )
-        ],
-        blank=True,
-        null=True,
-    )
-    email = models.EmailField(blank=True, null=True)
-    region = models.CharField(max_length=100, blank=True, null=True)
-    source = models.CharField(max_length=50, blank=True, null=True)
-    # stage = models.ForeignKey(
-    #     Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients"
-    # )
+    GENDER_CHOICES = [("Erkak", "Erkak"), ("Ayol", "Ayol")]
 
-    created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="created_patients",
-    )
-    avatar = models.ImageField(upload_to="avatars/", null=True, blank=True)
+    full_name = models.CharField(max_length=200)
+    date_of_birth = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
+    phone_number = models.CharField(max_length=20)
+    email = models.EmailField(blank=True)
+    complaints = models.TextField(blank=True)
+    previous_diagnosis = models.TextField(blank=True)
+    source = models.CharField(max_length=100, blank=True)
+
+    stage = models.ForeignKey(Stage, on_delete=models.SET_NULL, null=True, related_name="patients")
+    tag = models.ForeignKey(Tag, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_patients")
+
+    # Soft delete / arxiv
+    is_archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Bemor (Jarayon)"
-        verbose_name_plural = "Bemorlar (Jarayon)"
         ordering = ["-created_at"]
 
-    def __str__(self):
-        return self.full_name or (self.profile.user.get_full_name() if self.profile else "No name")
+    def __str__(self) -> str:
+        return self.full_name
 
+
+class PatientHistory(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="history")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class PatientDocument(models.Model):
-    patient = models.ForeignKey(
-        Patient, on_delete=models.CASCADE, related_name="documents", null=True
+    SOURCE_CHOICES = [("operator", "operator"), ("patient", "patient"), ("partner", "partner")]
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="documents")
+    file = models.FileField(
+        upload_to="patient_documents/",
+        validators=[FileExtensionValidator(allowed_extensions=["pdf", "jpg", "jpeg", "png", "doc", "docx"])],
     )
-    file = models.FileField(upload_to="patient_documents/")
-    description = models.CharField(max_length=200, blank=True, null=True)
-    uploaded_by = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="uploaded_documents", null=True
-    )
-    uploaded_at = models.DateTimeField(auto_now_add=True, null=True)
-    source_type = models.CharField(
-        max_length=20,
-        choices=[("operator", "Operator"), ("patient", "Bemor"), ("partner", "Hamkor")],
-    )
+    description = models.CharField(max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    source_type = models.CharField(max_length=20, choices=SOURCE_CHOICES)
 
     class Meta:
-        verbose_name = "Hujjat"
-        verbose_name_plural = "Hujjatlar"
         ordering = ["-uploaded_at"]
 
-    def __str__(self):
-        return f"{self.patient.full_name} - {self.file.name}"
 
-    def get_source_type_display(self):
-        return dict(self._meta.get_field("source_type").choices).get(
-            self.source_type, self.source_type
-        )
+class ChatMessage(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="messages")
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    message = models.TextField(blank=True, null=True)
+    file = models.FileField(upload_to="chat_files/", blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["timestamp"]
+
+
+# 5.1 (ixtiyoriy): Shartnoma tasdiqlash
+class Contract(models.Model):
+    STATUS = [("pending", "pending"), ("approved", "approved"), ("rejected", "rejected")]
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="contracts")
+    file = models.FileField(upload_to="contracts/")
+    status = models.CharField(max_length=20, choices=STATUS, default="pending")
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-id"]

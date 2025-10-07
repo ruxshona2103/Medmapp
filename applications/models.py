@@ -3,7 +3,7 @@ import string
 from django.db import models
 from django.conf import settings
 from patients.models import Patient
-from stages.models import Stage
+from core.models import Stage
 # from clinics.models import Clinic  # agar keyin kerak bo‘lsa
 
 
