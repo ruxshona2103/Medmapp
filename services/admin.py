@@ -8,7 +8,7 @@ class HotelAdmin(admin.ModelAdmin):
     search_fields = ("name", "address")
     list_filter = ("stars",)
 
-
+# lknqosgeiolqaolgijq
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "hotel", "start_date", "end_date", "guests", "created_at")
