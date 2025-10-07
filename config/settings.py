@@ -52,7 +52,7 @@ INSTALLED_APPS = [
     "services",
     "consultations",
     "reviews.apps.ReviewsConfig",
-    "stages.apps.StagesConfig",
+    "core.apps.StagesConfig",
 ]
 
 MIDDLEWARE = [
