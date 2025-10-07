@@ -1,26 +1,32 @@
-# patients/admin.py
 from django.contrib import admin
-from .models import PatientProfile, Patient,  PatientDocument
-
-
-@admin.register(PatientProfile)
-class PatientProfileAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "full_name", "gender")
-    search_fields = ("full_name", "user__phone_number")
-    raw_id_fields = ("user",)
-
+from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
 
 
 @admin.register(Patient)
 class PatientAdmin(admin.ModelAdmin):
-    list_display = ("id", "full_name", "phone",  "created_by", "created_at")
-    list_filter = ( "created_by", "created_at")
-    search_fields = ("full_name", "phone", "email")
-    raw_id_fields = ("profile", "created_by")
+    list_display = ("id", "full_name", "phone_number", "stage", "tag", "is_archived", "created_at")
+    list_filter = ("stage", "tag", "is_archived")
+    search_fields = ("full_name", "phone_number", "email")
+
+
+@admin.register(PatientHistory)
+class PatientHistoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "patient", "author", "created_at")
+    search_fields = ("patient__full_name", "author__username")
 
 
 @admin.register(PatientDocument)
 class PatientDocumentAdmin(admin.ModelAdmin):
-    list_display = ("id", "patient", "uploaded_by", "file", "uploaded_at")
+    list_display = ("id", "patient", "source_type", "uploaded_by", "uploaded_at")
+    list_filter = ("source_type",)
     search_fields = ("patient__full_name",)
-    raw_id_fields = ("patient", "uploaded_by")
+
+
+@admin.register(ChatMessage)
+class ChatMessageAdmin(admin.ModelAdmin):
+    list_display = ("id", "patient", "sender", "timestamp")
+
+
+@admin.register(Contract)
+class ContractAdmin(admin.ModelAdmin):
+    list_display = ("id", "patient", "status", "approved_at")
