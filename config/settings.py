@@ -17,15 +17,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
+# config/settings.py
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "0.0.0.0"]
 
-ALLOWED_HOSTS = [
-    "medmapp.onrender.com",
-    "medmapp-production.up.railway.app",
-    "127.0.0.1",
-    "library.localhost",
-    "medmapp-production-b901.up.railway.app",
-]
+# ALLOWED_HOSTS = [
+#     "medmapp.onrender.com",
+#     "medmapp-production.up.railway.app",
+#     "127.0.0.1",
+#     "library.localhost",
+#     "medmapp-production-b901.up.railway.app",
+# ]
 
 
 AUTH_USER_MODEL = "authentication.CustomUser"
@@ -45,14 +46,13 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_yasg",
     "channels",
-    "phonenumber_field",
     "patients.apps.PatientsConfig",
     "authentication",
     "applications",
     "services",
     "consultations",
     "reviews.apps.ReviewsConfig",
-    "core.apps.StagesConfig",
+    "core.apps.CoreConfig",
 ]
 
 MIDDLEWARE = [
@@ -120,14 +120,15 @@ CHANNEL_LAYERS = {
 #     }
 # }
 
+DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/medmapp_db")
 
 DATABASES = {
-    "default": dj_database_url.parse(
-        "postgresql://postgres:oCvZGMRaaTIjYZfTXfAjSNbZvZHKoniR@gondola.proxy.rlwy.net:42842/railway",
-        conn_max_age=600,
+    "default": dj_database_url.config(
+        default=DATABASE_URL,
+        conn_max_age=600,      # ✅ shu yerda beriladi
+        ssl_require=False,     # kerak bo‘lsa True qiling
     )
 }
-
 
 AUTH_PASSWORD_VALIDATORS = [
     {
