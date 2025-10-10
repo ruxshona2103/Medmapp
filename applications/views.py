@@ -1,105 +1,134 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import generics, permissions, viewsets, status
-from rest_framework.views import APIView
+from rest_framework import viewsets, generics, permissions, status
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.exceptions import PermissionDenied
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import Application, ApplicationHistory, Document
-from .permissions import IsAdminOrOperatorOrReadOnly
-from .serializers import ApplicationSerializer, DocumentSerializer
+from .serializers import (
+    ApplicationSerializer,
+    ApplicationCreateUpdateSerializer,
+    DocumentSerializer
+)
 from core.models import Stage
-
-from core.models import Stage
-
-from rest_framework import viewsets, permissions
-from drf_yasg import openapi
-from drf_yasg.utils import swagger_auto_schema
-from .models import Application, Stage
-from .serializers import ApplicationSerializer
-from .permissions import IsAdminOrOperatorOrReadOnly
+from patients.models import Patient
 
 
+# ===============================================================
+# 🧾 APPLICATION CRUD (Frontend: "Mening Tashxislarim" sahifasi)
+# ===============================================================
 class ApplicationViewSet(viewsets.ModelViewSet):
     """
-    🧾 Murojaatlarni (Arizalarni) boshqarish uchun ViewSet.
+    🩺 **Mening Tashxislarim (Arizalar) API**
 
-    🔍 Qo'llab-quvvatlaydigan funksiyalar:
-      - GET /applications/?stage=<ID> → Stage ID bo‘yicha filtrlash
-      - POST /applications/ → Yangi murojaat yaratish (default stage bilan)
-
-    Faqat autentifikatsiya qilingan foydalanuvchilar uchun ruxsat.
-    Admin va Operatorlar barcha ma’lumotlarni ko‘ra oladi.
-    Oddiy user esa faqat o‘z murojaatlarini ko‘radi.
+    Bu API `Mening Tashxislarim` sahifasida ishlaydi.
+    - Bemor o‘zi yaratgan arizalarni ko‘radi.
+    - Operator va admin barcha arizalarni boshqaradi.
     """
+    queryset = Application.objects.filter(is_archived=False).select_related("patient", "stage")
+    permission_classes = [permissions.IsAuthenticated]
 
-    queryset = Application.objects.all()
-    serializer_class = ApplicationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminOrOperatorOrReadOnly]
+    def get_serializer_class(self):
+        if self.action in ["create", "update", "partial_update"]:
+            return ApplicationCreateUpdateSerializer
+        return ApplicationSerializer
 
-    # --- 🔹 Swagger uchun parametr qo‘shamiz ---
+    # ==============================================
+    # 📋 Arizalar ro‘yxatini olish
+    # ==============================================
     @swagger_auto_schema(
+        operation_summary="📋 Arizalar ro‘yxatini olish",
+        operation_description=(
+            "Bemor faqat o‘z arizalarini ko‘radi, operator esa barcha arizalarni ko‘ra oladi.\n\n"
+            "Bu API `Mening Tashxislarim` sahifasidagi jadvalni to‘ldirish uchun ishlatiladi."
+        ),
         manual_parameters=[
             openapi.Parameter(
-                name="stage",
-                in_=openapi.IN_QUERY,
+                "stage",
+                openapi.IN_QUERY,
                 type=openapi.TYPE_INTEGER,
-                required=False,
-                description="Bosqich (Stage) ID'si bo‘yicha filtrlash. Masalan: ?stage=45"
-            ),
-        ]
+                description="Filtrlash uchun Stage ID (ixtiyoriy)."
+            )
+        ],
+        responses={200: ApplicationSerializer(many=True)},
+        tags=["Applications"],
     )
     def list(self, request, *args, **kwargs):
-        """Murojaatlar ro‘yxatini qaytaradi."""
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
-        """
-        🔍 Foydalanuvchining roliga qarab va stage parametri asosida filtrlaydi.
-        Agar stage NULL bo‘lsa — avtomatik ravishda birinchi stage’ni biriktiradi.
-        """
         user = self.request.user
-        queryset = Application.objects.all()
+        qs = Application.objects.filter(is_archived=False)
 
-        # ⚙️ Agar stage NULL bo‘lsa, birinchi stage’ni ulab qo‘yish
-        default_stage = Stage.objects.order_by('id').first()
-        if default_stage:
-            Application.objects.filter(stage__isnull=True).update(stage=default_stage)
+        # 🩺 Agar foydalanuvchi "patient" bo‘lsa, faqat o‘z arizalarini ko‘radi
+        if getattr(user, "role", "patient") == "patient":
+            # endi created_by o‘rniga Patient bilan bog‘laymiz
+            patient = Patient.objects.filter(phone_number=user.phone_number).first()
+            if patient:
+                qs = qs.filter(patient=patient)
 
-        # 👤 Oddiy user faqat o‘z murojaatlarini ko‘radi
-        if getattr(user, 'role', 'user') == 'user':
-            queryset = queryset.filter(patient=user)
+        return qs.select_related("patient", "stage").prefetch_related("documents", "history")
 
-        # 🔎 stage=? orqali filtrlash
-        stage_id = self.request.query_params.get('stage')
-        if stage_id:
-            queryset = queryset.filter(stage__id=stage_id)
-
-        # 🧠 Samaradorlik uchun related obyektlarni bir so‘rovda olish
-        return queryset.select_related('patient', 'stage').prefetch_related('documents', 'history')
+    # ==============================================
+    # 🆕 Yangi ariza yaratish
+    # ==============================================
+    @swagger_auto_schema(
+        operation_summary="🆕 Yangi ariza yaratish",
+        operation_description=(
+            "Bemor yangi ariza (anketa) yuboradi.\n\n"
+            "Frontenddagi `Anketani to‘ldirish` tugmasi bosilganda ishlaydi."
+        ),
+        request_body=ApplicationCreateUpdateSerializer,
+        responses={201: ApplicationSerializer},
+        tags=["Applications"],
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         """
-        🆕 Yangi Application yaratilganda:
-        - Foydalanuvchini `patient` sifatida ulaydi
-        - Stage bo‘lmasa → `code_name='yangi'` yoki birinchi stage’ni oladi
+        Yangi ariza yaratish jarayoni.
+        - Agar user patient bo‘lsa, Patient yozuvi aniqlanadi yoki yaratiladi
+        - Default bosqich: 'yangi'
         """
-        user = self.request.user
+        user = self.request.user  # bu CustomUser bo‘ladi
+        default_stage = Stage.objects.filter(code_name="yangi").first() or Stage.objects.first()
 
-        # Default stage aniqlash: avval 'yangi', bo‘lmasa birinchi stage
-        default_stage = (
-            Stage.objects.filter(code_name='yangi').first()
-            or Stage.objects.order_by('id').first()
+        # 👤 Bemorni aniqlaymiz yoki yaratamiz
+        if getattr(user, "role", "patient") == "patient":
+            patient, _ = Patient.objects.get_or_create(created_by=user, defaults={
+                "full_name": f"{user.first_name} {user.last_name}".strip(),
+                "phone_number": getattr(user, "phone_number", None)
+            })
+        else:
+            patient = serializer.validated_data.get("patient")
+
+        # 🧾 Application saqlaymiz
+        application = serializer.save(
+            patient=patient,
+            stage=default_stage,
+            status="pending"
         )
 
-        serializer.save(patient=user, stage=default_stage)
+        # 🕓 Tarixga yozuv kiritamiz (author — user bo‘lishi kerak, patient emas)
+        ApplicationHistory.objects.create(
+            application=application,
+            author=self.request.user,  # 🔥 to‘g‘risi shu bo‘ladi!
+            comment="📝 Yangi ariza yaratildi"
+        )
 
 
+# ===============================================================
+# 📎 HUJJATLAR (Document)
+# ===============================================================
 class DocumentListCreateView(generics.ListCreateAPIView):
     """
-    Muayyan arizaga tegishli hujjatlarni olish (GET) va yangi hujjat yuklash (POST).
+    📂 **Ariza hujjatlari**
+    - GET → Arizaga biriktirilgan hujjatlar ro‘yxati.
+    - POST → Yangi hujjat yuklash (PDF, JPG, PNG).
     """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -107,52 +136,71 @@ class DocumentListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         application_id = self.kwargs.get("application_id")
-        user = self.request.user
-
-        if getattr(user, 'role', 'user') == 'user':
-            return Document.objects.filter(application__id=application_id, application__patient=user)
-        else:
-            return Document.objects.filter(application__id=application_id)
+        return Document.objects.filter(application__id=application_id)
 
     @swagger_auto_schema(
-        operation_description="Tanlangan arizaga yangi fayl yuklash.",
+        operation_summary="📎 Arizaga hujjat yuklash",
+        operation_description=(
+            "Fayl formatlari: PDF, JPG yoki PNG.\n\n"
+            "Frontenddagi `Anketa hujjatlari` oynasida ishlaydi."
+        ),
         manual_parameters=[
-            openapi.Parameter(name="file", in_=openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description="Tizimga yuklanadigan hujjat"),
+            openapi.Parameter(
+                name="file",
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_FILE,
+                required=True,
+                description="Yuklanadigan fayl (PDF/JPG/PNG)"
+            ),
+            openapi.Parameter(
+                name="description",
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                description="Fayl tavsifi (ixtiyoriy)"
+            )
         ],
-        request_body=None
+        responses={201: DocumentSerializer},
+        tags=["Applications"],
     )
     def post(self, request, *args, **kwargs):
-        return self.create(request, *args, **kwargs)
+        return super().post(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         application_id = self.kwargs.get("application_id")
         user = self.request.user
-        query_params = {'id': application_id}
-
-        if getattr(user, 'role', 'user') == 'user':
-            query_params['patient'] = user
-
-        application = get_object_or_404(Application, **query_params)
+        application = get_object_or_404(Application, id=application_id)
         serializer.save(application=application, uploaded_by=user)
+        ApplicationHistory.objects.create(application=application, author=user, comment="📄 Hujjat yuklandi")
 
+
+# ===============================================================
+# 🔁 BOSQICHNI O‘ZGARTIRISH (faqat admin/operator)
+# ===============================================================
 class ChangeApplicationStageView(APIView):
-    """Arizaning bosqichini o'zgartirish (faqat admin/operator uchun)."""
+    """
+    🔄 **Bosqichni o‘zgartirish API**
+    Faqat operator yoki admin foydalanuvchilar foydalanadi.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
+        operation_summary="🔁 Bosqichni o‘zgartirish",
+        operation_description="Arizaning bosqichini yangilaydi (masalan: 'Yangi' → 'Ko‘rib chiqilmoqda').",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["new_stage_id"],
             properties={
                 "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi Stage ID"),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh (ixtiyoriy)"),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh (ixtiyoriy)")
             },
-        )
+        ),
+        responses={200: openapi.Response("Bosqich muvaffaqiyatli o‘zgartirildi")},
+        tags=["Applications"],
     )
     def patch(self, request, application_id):
         user = request.user
-        if getattr(user, 'role', 'user') not in ['admin', 'operator']:
-            raise PermissionDenied("Sizda bosqichni o'zgartirishga ruxsat yo'q.")
+        if getattr(user, "role", "patient") == "patient":
+            raise PermissionDenied("Sizda bosqichni o‘zgartirishga ruxsat yo‘q.")
 
         application = get_object_or_404(Application, id=application_id)
         new_stage_id = request.data.get("new_stage_id")
@@ -162,9 +210,9 @@ class ChangeApplicationStageView(APIView):
         new_stage = get_object_or_404(Stage, id=new_stage_id)
         old_stage = application.stage
         application.stage = new_stage
-        application.save(update_fields=["stage"])
+        application.save(update_fields=["stage", "updated_at"])
 
-        comment = request.data.get("comment", f"Bosqich o‘zgartirildi: {getattr(old_stage, 'name', '—')} → {new_stage.name}")
+        comment = request.data.get("comment") or f"Bosqich '{getattr(old_stage, 'title', '—')}' → '{new_stage.title}' ga o‘zgartirildi"
         ApplicationHistory.objects.create(application=application, author=user, comment=comment)
 
-        return Response({"success": True, "new_stage": new_stage.name}, status=status.HTTP_200_OK)
+        return Response({"success": True, "new_stage": new_stage.title}, status=status.HTTP_200_OK)
