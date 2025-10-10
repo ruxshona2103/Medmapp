@@ -28,6 +28,10 @@ ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "0.0.0.0"]
 #     "medmapp-production-b901.up.railway.app",
 # ]
 
+LOCALE_PATHS = [BASE_DIR / 'locale']
+MEDIA_ROOT = BASE_DIR / 'media'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
 
 AUTH_USER_MODEL = "authentication.CustomUser"
 
