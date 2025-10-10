@@ -1,7 +1,6 @@
 # authentication/views.py
 from django.contrib.auth import get_user_model
-from django.db import transaction
-
+from django.db import transaction, IntegrityError
 from rest_framework import status, viewsets, filters, generics, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -13,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from authentication.models import CustomUser, MedicalFile
+from core.models import Stage, Tag
 from .serializers import (
     RegisterSerializer,
     OtpRequestSerializer,
@@ -64,6 +64,50 @@ class OtpRequestView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
+def _ensure_default_stage() -> Stage:
+    """
+    Default bosqichni ishonchli qaytaradi:
+    - avval get_default_stage() dan;
+    - bo‘lmasa code_name='new';
+    - bo‘lmasa order=1;
+    - bo‘lmasa yaratib yuboradi.
+    """
+    # 1) util bo‘lsa
+    try:
+        st = get_default_stage()
+        if st:
+            return st
+    except Exception:
+        pass
+
+    # 2) code_name='new'
+    st = Stage.objects.filter(code_name="new").order_by("id").first()
+    if st:
+        return st
+
+    # 3) order=1
+    st = Stage.objects.order_by("order", "id").first()
+    if st:
+        return st
+
+    # 4) hech narsa bo‘lmasa — minimal defaultni yaratamiz
+    return Stage.objects.create(title="Yangi", color="#4F46E5", order=1, code_name="new")
+
+
+def _ensure_default_tag() -> Tag | None:
+    """
+    Default tagni (‘Yangi’) qaytaradi yoki yaratadi.
+    Agar Tag modelida qo‘shimcha majburiy maydonlar bo‘lsa,
+    shu yerda mos default qiymat qo‘yiladi.
+    """
+    try:
+        tag, _ = Tag.objects.get_or_create(name="Yangi", defaults={"color": "#4F46E5"})
+        return tag
+    except Exception:
+        # Tag majburiy emas — xato bo‘lsa None qaytaramiz
+        return None
+
+
 class OtpVerifyView(APIView):
     permission_classes = [AllowAny]
 
@@ -71,7 +115,7 @@ class OtpVerifyView(APIView):
         operation_description=(
             "OTP ni tasdiqlaydi. Muvaffaqiyatda JWT tokenlarni qaytaradi. "
             "Foydalanuvchi roli 'patient' bo‘lsa (yoki rol yo‘q bo‘lsa), Patient avtomatik yaratiladi "
-            "va birlamchi bosqich (Yangi) biriktiriladi."
+            "va birlamchi bosqich (Yangi) hamda default tag biriktiriladi."
         ),
         request_body=OtpVerifySerializer,
         responses={200: "OTP tasdiqlandi va token qaytarildi"},
@@ -81,37 +125,49 @@ class OtpVerifyView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # 👉 Patient avtomatik yaratilishi (safe qiymatlar bilan)
-        with transaction.atomic():
-            # Rol maydoni bo‘lsa va patient bo‘lmasa — patient qilib qo‘yamiz
-            if hasattr(user, "role") and (user.role or "").lower() != "patient":
-                user.role = "patient"
-                user.save(update_fields=["role"])
+        try:
+            with transaction.atomic():
+                # Rolni patient qilib qo‘yish (bo‘lsa)
+                if hasattr(user, "role") and (user.role or "").lower() != "patient":
+                    user.role = "patient"
+                    user.save(update_fields=["role"])
 
-            # Patient mavjud emasmi? — yaratamiz
-            if not Patient.objects.filter(created_by=user, is_archived=False).exists():
-                stage = get_default_stage()  # 'Yangi' / 'new' / birinchi bosqichdan biri
+                # Patient bor-yo‘qligini tekshiramiz (idempotent)
+                patient = (
+                    Patient.objects.select_for_update()
+                    .filter(created_by=user, is_archived=False)
+                    .first()
+                )
 
-                # SAFE qiymatlar (None ketmasligi uchun)
-                safe_full_name = (
-                    f"{(user.first_name or '').strip()} {(user.last_name or '').strip()}".strip()
-                    or (getattr(user, "username", "") or getattr(user, "phone_number", "") or "Foydalanuvchi")
-                )
-                safe_phone = (getattr(user, "phone_number", "") or "").strip()
-                safe_email = (getattr(user, "email", "") or "").strip()   # <<< NULL o‘rniga bo‘sh string
+                if not patient:
+                    stage = _ensure_default_stage()
+                    tag = _ensure_default_tag()
 
-                patient = Patient.objects.create(
-                    created_by=user,
-                    full_name=safe_full_name,
-                    phone_number=safe_phone,
-                    email=safe_email,     # <<< endi DBga NULL ketmaydi
-                    stage=stage,
-                )
-                PatientHistory.objects.create(
-                    patient=patient,
-                    author=user,
-                    comment="Bemor profili yaratildi",
-                )
+                    # SAFE qiymatlar (None tushmasin)
+                    safe_full_name = (
+                        f"{(user.first_name or '').strip()} {(user.last_name or '').strip()}".strip()
+                        or (getattr(user, "username", "") or getattr(user, "phone_number", "") or "Foydalanuvchi")
+                    )
+                    safe_phone = (getattr(user, "phone_number", "") or "").strip()
+                    safe_email = (getattr(user, "email", "") or "").strip()
+
+                    patient = Patient.objects.create(
+                        created_by=user,
+                        full_name=safe_full_name,
+                        phone_number=safe_phone,
+                        email=safe_email,
+                        stage=stage,
+                        tag=tag,  # 🟢 default tag biriktirildi (agar mavjud bo‘lsa)
+                    )
+                    PatientHistory.objects.create(
+                        patient=patient,
+                        author=user,
+                        comment="Bemor profili yaratildi",
+                    )
+
+        except IntegrityError:
+            # Poygada parallel urinish bo‘lsa, yana bir bor chaqirib ko‘ramiz
+            patient = Patient.objects.filter(created_by=user, is_archived=False).first()
 
         # JWT tokenlar
         refresh = RefreshToken.for_user(user)
@@ -126,7 +182,6 @@ class OtpVerifyView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]

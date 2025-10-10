@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -18,10 +19,12 @@ from .serializers import (
     PatientDocumentSerializer,
     PatientProfileSerializer,
 )
-# 🔵 YANGI: default stage/tag tanlash helperlari
-from .utils import get_default_stage, get_default_tag
+from .utils import get_default_stage
 
 
+# ===============================================================
+# 🧩 3.1 — BEMORLAR CRUD
+# ===============================================================
 class PatientViewSet(viewsets.ModelViewSet):
     """
     Bemorlar (TZ 3.1):
@@ -35,9 +38,9 @@ class PatientViewSet(viewsets.ModelViewSet):
     queryset = Patient.objects.filter(is_archived=False).select_related("stage", "tag").order_by("-created_at")
 
     def get_serializer_class(self):
-        if self.action in ["list"]:
+        if self.action == "list":
             return PatientListSerializer
-        if self.action in ["retrieve"]:
+        if self.action == "retrieve":
             return PatientDetailSerializer
         return PatientCreateUpdateSerializer
 
@@ -54,7 +57,6 @@ class PatientViewSet(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
-
         search = request.query_params.get("search")
         stage_id = request.query_params.get("stage_id")
         tag_id = request.query_params.get("tag_id")
@@ -70,14 +72,19 @@ class PatientViewSet(viewsets.ModelViewSet):
         if tag_id:
             qs = qs.filter(tag_id=tag_id)
 
-        # Simple pagination (page/per_page)
+        # Simple pagination
         page = int(request.query_params.get("page", 1))
         per_page = int(request.query_params.get("per_page", 20))
         start = (page - 1) * per_page
         end = start + per_page
 
         serializer = PatientListSerializer(qs[start:end], many=True, context={"request": request})
-        return Response({"count": qs.count(), "page": page, "per_page": per_page, "results": serializer.data})
+        return Response({
+            "count": qs.count(),
+            "page": page,
+            "per_page": per_page,
+            "results": serializer.data
+        })
 
     @swagger_auto_schema(
         operation_description="Yangi bemor yaratish. Tarixga 'Bemor profili yaratildi' yoziladi. Stage/tag kelmasa — default qo‘yiladi.",
@@ -85,27 +92,23 @@ class PatientViewSet(viewsets.ModelViewSet):
         responses={201: PatientDetailSerializer},
     )
     def create(self, request, *args, **kwargs):
-        """
-        ⚙️ MUHIM O‘ZGARISH:
-        - Operator POST qilganda `stage`/`tag` berilmasa → `get_default_stage()` / `get_default_tag()` bilan avtomatik qo‘yiladi.
-        """
         serializer = PatientCreateUpdateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-
         payload = {**serializer.validated_data}
-        # stage yo‘q bo‘lsa default “Yangi”
+
         if not payload.get("stage"):
             payload["stage"] = get_default_stage()
-        # tag ixtiyoriy — istasang yoqasiz
-        # if not payload.get("tag"):
-        #     payload["tag"] = get_default_tag()
 
         patient = Patient.objects.create(created_by=request.user, **payload)
         PatientHistory.objects.create(patient=patient, author=request.user, comment="Bemor profili yaratildi")
-        return Response(PatientDetailSerializer(patient, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+        return Response(
+            PatientDetailSerializer(patient, context={"request": request}).data,
+            status=status.HTTP_201_CREATED
+        )
 
     @swagger_auto_schema(
-        operation_description="Bitta bemorning to‘liq ma'lumotlari (offcanvas uchun): tarix, hujjatlar bilan.",
+        operation_description="Bitta bemorning to‘liq ma'lumotlari (tarix va hujjatlar bilan).",
         responses={200: PatientDetailSerializer},
     )
     def retrieve(self, request, *args, **kwargs):
@@ -163,48 +166,53 @@ class PatientViewSet(viewsets.ModelViewSet):
         return Response({"success": True})
 
 
+# ===============================================================
+# 🧩 3.4 — HUJJATLAR
+# ===============================================================
 class PatientDocumentViewSet(mixins.CreateModelMixin,
                              mixins.DestroyModelMixin,
                              viewsets.GenericViewSet):
-    """
-    Hujjatlar (TZ 3.4):
-    - POST /patients/{patient_id}/documents/ — Bemorga hujjat yuklash
-    - DELETE /documents/{id}/ — Hujjatni o‘chirish
-    """
     permission_classes = [IsAuthenticated]
     queryset = PatientDocument.objects.all()
     serializer_class = PatientDocumentSerializer
+    parser_classes = (MultiPartParser, FormParser)
 
     @swagger_auto_schema(
-        operation_description="Muayyan bemorga yangi hujjat yuklash.",
-        request_body=PatientDocumentSerializer,
-        responses={201: PatientDocumentSerializer},
+        operation_summary="Muayyan bemorga yangi hujjat yuklash",
+        manual_parameters=[
+            openapi.Parameter("patient_pk", openapi.IN_PATH, description="Bemor ID raqami", type=openapi.TYPE_INTEGER, required=True),
+            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, description="Fayl yuklash (PDF, JPG, PNG va h.k.)", required=True),
+            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING, description="Fayl tavsifi (ixtiyoriy)"),
+            openapi.Parameter("source_type", openapi.IN_FORM, type=openapi.TYPE_STRING,
+                              enum=["operator", "patient", "partner"],
+                              description="Kim tomonidan yuklandi", required=True),
+        ],
+        responses={201: PatientDocumentSerializer}
     )
     def create(self, request, *args, **kwargs):
-        patient_id = kwargs.get("patient_pk") or request.data.get("patient")
-        patient = get_object_or_404(Patient, pk=patient_id, is_archived=False)
-        ser = PatientDocumentSerializer(data=request.data, context={"request": request})
-        ser.is_valid(raise_exception=True)
-        doc = PatientDocument.objects.create(
-            patient=patient,
-            file=ser.validated_data["file"],
-            description=ser.validated_data.get("description", ""),
-            uploaded_by=request.user,
-            source_type=ser.validated_data["source_type"],
-        )
-        PatientHistory.objects.create(patient=patient, author=request.user, comment="Hujjat yuklandi")
-        return Response(PatientDocumentSerializer(doc, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        patient_pk = kwargs.get("patient_pk")
+        patient = get_object_or_404(Patient, pk=patient_pk)
+        serializer = self.get_serializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        document = serializer.save(patient=patient, uploaded_by=request.user)
+        PatientHistory.objects.create(patient=patient, author=request.user,
+                                      comment=f"Hujjat yuklandi: {serializer.validated_data.get('description', '')}")
+        return Response(self.get_serializer(document, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(operation_description="Hujjatni o‘chirish.")
+    @swagger_auto_schema(operation_description="Hujjatni o‘chirish.", responses={204: "Deleted successfully"})
     def destroy(self, request, *args, **kwargs):
-        return super().destroy(request, *args, **kwargs)
+        instance = self.get_object()
+        patient = instance.patient
+        PatientHistory.objects.create(patient=patient, author=request.user,
+                                      comment=f"Hujjat o‘chirildi: {instance.description or instance.file.name}")
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# ===============================================================
+# 🧩 3.5 — JAVOB XATLARI
+# ===============================================================
 class ResponseLettersViewSet(viewsets.ViewSet):
-    """
-    TZ 3.5: 'Javob xatlari' bosqichidagi bemorlar,
-    va ularga tegishli faqat 'partner' tomonidan yuborilgan hujjatlar.
-    """
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(operation_description="response_letters bosqichidagi bemorlar va 'partner' hujjatlari.")
@@ -223,16 +231,15 @@ class ResponseLettersViewSet(viewsets.ViewSet):
         return Response(data)
 
 
+# ===============================================================
+# 🧩 5.1 — SHARTNOMANI TASDIQLASH
+# ===============================================================
 class ContractApproveViewSet(viewsets.ViewSet):
-    """
-    5.1: Shartnomani bemor tasdiqlashi
-    - POST /contracts/{id}/approve/
-    """
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         method="post",
-        operation_description="Bemor shartnomani tasdiqlaydi (status=approved). Faqat shu bemor/unga bog‘langan user.",
+        operation_description="Bemor shartnomani tasdiqlaydi (status=approved).",
     )
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
@@ -243,11 +250,10 @@ class ContractApproveViewSet(viewsets.ViewSet):
         return Response({"status": "approved"})
 
 
+# ===============================================================
+# 🧩 5.2 — BEMOR PROFILI
+# ===============================================================
 class MeProfileView(APIView):
-    """
-    Bemor paneli: Joriy user’ning Patient profili
-    - GET /me/profile/
-    """
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(operation_description="Joriy user uchun Patient profili (bemorga mo‘ljallangan panel).")
