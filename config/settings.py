@@ -18,15 +18,13 @@ SECRET_KEY = "django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # config/settings.py
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "0.0.0.0"]
+# ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "0.0.0.0"]
 
-# ALLOWED_HOSTS = [
-#     "medmapp.onrender.com",
-#     "medmapp-production.up.railway.app",
-#     "127.0.0.1",
-#     "library.localhost",
-#     "medmapp-production-b901.up.railway.app",
-# ]
+ALLOWED_HOSTS = [
+    '127.0.0.1',
+    'localhost',
+    'medmapp-1pjj.onrender.com',
+]
 
 LOCALE_PATHS = [BASE_DIR / 'locale']
 MEDIA_ROOT = BASE_DIR / 'media'
