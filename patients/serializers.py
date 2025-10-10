@@ -3,23 +3,7 @@ from core.models import Stage, Tag
 from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
 
 
-# --- Nested core serializers (unique ref_name) ---
-class PatientStageSerializer(serializers.ModelSerializer):
-    """Bemorlar uchun bosqich ma'lumotlari (Kanban)"""
-    class Meta:
-        model = Stage
-        fields = ["id", "title", "order", "color"]
-        ref_name = "PatientStageSerializer"
-
-
-class PatientTagSerializer(serializers.ModelSerializer):
-    """Bemorlar uchun teg (holat) ma'lumotlari"""
-    class Meta:
-        model = Tag
-        fields = ["id", "name", "color"]
-        ref_name = "PatientTagSerializer"
-
-
+# --- Oddiy helper serializerlar (agar kerak bo'lsa boshqa joylarda) ---
 class PatientDocumentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.StringRelatedField(read_only=True)
 
@@ -39,19 +23,31 @@ class PatientHistorySerializer(serializers.ModelSerializer):
         ref_name = "PatientHistorySerializer"
 
 
+# === Kanban/list ko'rinishi: faqat ID’lar ===
 class PatientListSerializer(serializers.ModelSerializer):
-    stage = PatientStageSerializer(read_only=True)
-    tag = PatientTagSerializer(read_only=True)
+    # E'TIBOR: source YO'Q. DRF modeldagi stage_id/tag_id ustunlarini o'zi oladi.
+    stage_id = serializers.IntegerField(read_only=True, allow_null=True)
+    tag_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = Patient
-        fields = ["id", "full_name", "gender", "phone_number", "email", "stage", "tag", "created_at"]
+        fields = [
+            "id",
+            "full_name",
+            "gender",
+            "phone_number",
+            "email",
+            "stage_id",   # <-- faqat ID
+            "tag_id",     # <-- faqat ID
+            "created_at",
+        ]
         ref_name = "PatientListSerializer"
 
 
+# === Batafsil ko'rinish: ham faqat ID’lar (TZ talabi) ===
 class PatientDetailSerializer(serializers.ModelSerializer):
-    stage = PatientStageSerializer(read_only=True)
-    tag = PatientTagSerializer(read_only=True)
+    stage_id = serializers.IntegerField(read_only=True, allow_null=True)
+    tag_id = serializers.IntegerField(read_only=True, allow_null=True)
     history = PatientHistorySerializer(many=True, read_only=True)
     documents = PatientDocumentSerializer(many=True, read_only=True)
 
@@ -67,8 +63,8 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             "complaints",
             "previous_diagnosis",
             "source",
-            "stage",
-            "tag",
+            "stage_id",   # <-- faqat ID
+            "tag_id",     # <-- faqat ID
             "created_at",
             "updated_at",
             "history",
@@ -77,13 +73,21 @@ class PatientDetailSerializer(serializers.ModelSerializer):
         ref_name = "PatientDetailSerializer"
 
 
+# === Create/Update: qolgan maydonlar; stage/tag FK sifatida kelishi mumkin ===
 class PatientCreateUpdateSerializer(serializers.ModelSerializer):
-    """Yaratish/Yangilash uchun serializer"""
     class Meta:
         model = Patient
         fields = [
-            "full_name","date_of_birth","gender","phone_number","email",
-            "complaints","previous_diagnosis","source","tag","stage",
+            "full_name",
+            "date_of_birth",
+            "gender",
+            "phone_number",
+            "email",
+            "complaints",
+            "previous_diagnosis",
+            "source",
+            "tag",    # POST/PATCH da ID yuboriladi (DRF FKga mos)
+            "stage",  # POST/PATCH da ID yuboriladi (DRF FKga mos)
         ]
         ref_name = "PatientCreateUpdateSerializer"
 
@@ -98,15 +102,26 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         ref_name = "PatientChatMessageSerializer"
 
 
+# === Bemorga mo'ljallangan profil: faqat ID’lar ===
 class PatientProfileSerializer(serializers.ModelSerializer):
-    stage = PatientStageSerializer(read_only=True)
-    tag = PatientTagSerializer(read_only=True)
+    stage_id = serializers.IntegerField(read_only=True, allow_null=True)
+    tag_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = Patient
         fields = [
-            "id","full_name","date_of_birth","gender","phone_number","email",
-            "complaints","previous_diagnosis","source","stage","tag",
-            "created_at","updated_at",
+            "id",
+            "full_name",
+            "date_of_birth",
+            "gender",
+            "phone_number",
+            "email",
+            "complaints",
+            "previous_diagnosis",
+            "source",
+            "stage_id",  # <-- faqat ID
+            "tag_id",    # <-- faqat ID
+            "created_at",
+            "updated_at",
         ]
         ref_name = "PatientProfileSerializer"
