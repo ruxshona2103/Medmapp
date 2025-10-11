@@ -122,15 +122,17 @@ CHANNEL_LAYERS = {
 #     }
 # }
 
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/medmapp_db")
 
 DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
-        conn_max_age=600,      # ✅ shu yerda beriladi
-        ssl_require=False,     # kerak bo‘lsa True qiling
+        conn_max_age=600,
+        ssl_require=False  # Render bazasi ssl talab qilmaydi (internal URL bo‘lgani uchun)
     )
 }
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -166,14 +168,9 @@ REST_FRAMEWORK = {
 }
 
 STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = []  # agar localda qo‘shimcha static papka bo‘lsa
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
-
 
 LANGUAGES = [
     ("uz", _("Uzbek")),
@@ -183,7 +180,6 @@ LANGUAGES = [
 
 LANGUAGE_CODE = "en-us"
 
-LOCALE_PATHS = [BASE_DIR / "locale"]
 
 TIME_ZONE = "UTC"
 
@@ -195,9 +191,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 DEBUG = True
-STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = []
+
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
