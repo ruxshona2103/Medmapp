@@ -121,7 +121,8 @@ CHANNEL_LAYERS = {
 #         "PORT": "5432",
 #     }
 # }
-
+import os
+import dj_database_url
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/medmapp_db")
 
@@ -129,9 +130,11 @@ DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=False  # Render bazasi ssl talab qilmaydi (internal URL bo‘lgani uchun)
+        ssl_require=False
     )
 }
+
+
 
 
 AUTH_PASSWORD_VALIDATORS = [
