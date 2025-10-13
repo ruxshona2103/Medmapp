@@ -60,11 +60,11 @@ class ApplicationSerializer(serializers.ModelSerializer):
 class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
     stage = serializers.PrimaryKeyRelatedField(queryset=Stage.objects.all(), required=False)
     patient = serializers.PrimaryKeyRelatedField(queryset=Patient.objects.all(), required=True)
-
+    id = serializers.IntegerField(read_only=True)
     class Meta:
         model = Application
         fields = [
-            "patient", "clinic_name", "complaint", "diagnosis",
+            "id", "patient", "clinic_name", "complaint", "diagnosis",
             "final_conclusion", "stage", "status", "comment"
         ]
 
