@@ -34,7 +34,7 @@ urlpatterns = [
     path("api/consultations/", include("consultations.urls")),
     path("api/reviews/", include("reviews.urls")),
     path("api/patients/", include("patients.urls")),
-
+    path('api/operator/', include('applications.urls_operator')),
 
     # swagger/redoc
     re_path(r"^swagger(?P<format>\.json|\.yaml)$", schema_view.without_ui(cache_timeout=0), name="schema-json"),

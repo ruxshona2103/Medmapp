@@ -13,19 +13,13 @@ def generate_application_id():
 
 class Application(models.Model):
     """Application (Ariza) modeli — bemorning murojaati"""
-    application_id = models.CharField(
-        max_length=20, unique=True, default=generate_application_id, editable=False
-    )
-    patient = models.ForeignKey(
-        Patient, on_delete=models.CASCADE, related_name="applications", verbose_name="Bemor"
-    )
+    application_id = models.CharField(max_length=20, unique=True, default=generate_application_id, editable=False)
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="applications", verbose_name="Bemor")
     clinic_name = models.CharField(max_length=255, blank=True, null=True, verbose_name="Klinika nomi")
     complaint = models.TextField(blank=True, null=True, verbose_name="Shikoyatlar")
     diagnosis = models.TextField(blank=True, null=True, verbose_name="Tashxis")
     final_conclusion = models.TextField(blank=True, null=True, verbose_name="Yakuniy xulosa")
-    stage = models.ForeignKey(
-        Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="applications", verbose_name="Bosqich"
-    )
+    stage = models.ForeignKey(Stage, on_delete=models.SET_NULL, null=True, blank=True, related_name="applications", verbose_name="Bosqich")
     status = models.CharField(
         max_length=20,
         choices=[

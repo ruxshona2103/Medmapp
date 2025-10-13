@@ -11,19 +11,15 @@ class Patient(models.Model):
     date_of_birth = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
     phone_number = models.CharField(max_length=20)
+    passport = models.CharField(max_length=9, default=None, null=True, blank=True)
     email = models.EmailField(blank=True)
     complaints = models.TextField(blank=True)
     previous_diagnosis = models.TextField(blank=True)
-    source = models.CharField(max_length=100, blank=True)
-
     stage = models.ForeignKey(Stage, on_delete=models.SET_NULL, null=True, related_name="patients")
     tag = models.ForeignKey(Tag, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_patients")
-
-    # Soft delete / arxiv
     is_archived = models.BooleanField(default=False)
     archived_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

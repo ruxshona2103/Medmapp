@@ -9,7 +9,7 @@ class PatientDocumentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PatientDocument
-        fields = ["id", "file", "description", "uploaded_by", "uploaded_at", "source_type"]
+        fields = ["id", "file", "description", "uploaded_by", "uploaded_at"]
         read_only_fields = ["uploaded_by", "uploaded_at"]
         ref_name = "PatientDocumentSerializer"
 
@@ -62,7 +62,6 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             "email",
             "complaints",
             "previous_diagnosis",
-            "source",
             "stage_id",   # <-- faqat ID
             "tag_id",     # <-- faqat ID
             "created_at",
@@ -82,10 +81,10 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
             "date_of_birth",
             "gender",
             "phone_number",
+            "passport",
             "email",
             "complaints",
             "previous_diagnosis",
-            "source",
             "tag",    # POST/PATCH da ID yuboriladi (DRF FKga mos)
             "stage",  # POST/PATCH da ID yuboriladi (DRF FKga mos)
         ]
@@ -114,11 +113,11 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "full_name",
             "date_of_birth",
             "gender",
+            "passport",
             "phone_number",
             "email",
             "complaints",
             "previous_diagnosis",
-            "source",
             "stage_id",  # <-- faqat ID
             "tag_id",    # <-- faqat ID
             "created_at",
