@@ -112,15 +112,17 @@ CHANNEL_LAYERS = {
 # This configuration in the Django settings file is defining the default database connection settings
 # for PostgreSQL. Here's what each key represents:
 # DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": "medmapp",
-#         "USER": "postgres",
-#         "PASSWORD": "1234",
-#         "HOST": "localhost",
-#         "PORT": "5432",
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'medmapp',      # bazaning nomi
+#         'USER': 'postgres',     # foydalanuvchi nomi
+#         'PASSWORD': '1111',     # YANGI parol (shu qiymat bo‘lishi shart)
+#         'HOST': 'localhost',
+#         'PORT': '5432',
 #     }
 # }
+
+
 import os
 import dj_database_url
 
