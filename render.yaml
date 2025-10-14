@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: medmapp
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    postdeployCommand: "python manage.py migrate --noinput"
