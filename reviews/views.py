@@ -72,8 +72,7 @@ class DoctorViewSet(viewsets.ReadOnlyModelViewSet):
 class ReviewViewSet(viewsets.ModelViewSet):
     serializer_class = ReviewSerializer
     permission_classes = [IsAuthenticatedOrReadOnly & IsPatientToCreate]
-    permission_classes = [IsAuthenticatedOrReadOnly]
-
+    queryset = Review.objects.all()
     def get_queryset(self):
         qs = super().get_queryset()
         clinic_id = self.request.query_params.get("clinic")
