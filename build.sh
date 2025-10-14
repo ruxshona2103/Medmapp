@@ -4,6 +4,9 @@
 echo "📦 Installing requirements..."
 pip install -r requirements.txt
 
+echo "🚀 Forcing patient migrations..."
+python force_migrate.py
+
 echo "🧱 Running migrations..."
 python manage.py makemigrations --noinput
 python manage.py migrate --noinput
