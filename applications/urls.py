@@ -1,26 +1,38 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ApplicationViewSet, DocumentListCreateView, ChangeApplicationStageView
+from .views import (
+    ApplicationViewSet,
+    DocumentListCreateView,
+    ChangeApplicationStageView,
+    CompletedApplicationViewSet,
+)
+from .views_operator import ChangeApplicationStatusView
 
-# 🔹 Routerni prefixsiz e’lon qilamiz
+# 🔹 Router — avtomatik CRUD endpointlar uchun
 router = DefaultRouter()
-router.register("", ApplicationViewSet, basename="application")
+router.register(r"applications", ApplicationViewSet, basename="applications")
+router.register(r"completed-applications", CompletedApplicationViewSet, basename="completed-applications")
 
 urlpatterns = [
-    # 📋 CRUD (GET, POST, PUT, DELETE)
     path("", include(router.urls)),
 
-    # 📎 Hujjatlar (arizaga fayl biriktirish)
+    # 🔹 Hujjatlar uchun
     path(
-        "<int:application_id>/documents/",
+        "applications/<int:application_id>/documents/",
         DocumentListCreateView.as_view(),
         name="application-documents",
     ),
 
-    # 🔁 Bosqichni o‘zgartirish (faqat operator/admin)
+    # 🔹 Bosqichni o‘zgartirish uchun
     path(
-        "<int:application_id>/change-stage/",
+        "applications/<int:application_id>/change-stage/",
         ChangeApplicationStageView.as_view(),
         name="application-change-stage",
     ),
+    path(
+    "applications/<int:application_id>/change-status/",
+    ChangeApplicationStatusView.as_view(),
+    name="application-change-status",
+    ),
+
 ]
