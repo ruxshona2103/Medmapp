@@ -179,6 +179,7 @@ class PatientDocumentViewSet(mixins.CreateModelMixin,
 
     @swagger_auto_schema(
         operation_summary="Muayyan bemorga yangi hujjat yuklash",
+        consumes=['multipart/form-data'],
         manual_parameters=[
             openapi.Parameter("patient_pk", openapi.IN_PATH, description="Bemor ID raqami", type=openapi.TYPE_INTEGER, required=True),
             openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, description="Fayl yuklash (PDF, JPG, PNG va h.k.)", required=True),
@@ -251,14 +252,48 @@ class ContractApproveViewSet(viewsets.ViewSet):
 
 
 # ===============================================================
-# 🧩 5.2 — BEMOR PROFILI
+# 🧩 5.2 — BEMOR PROFILI (AVATAR bilan)
 # ===============================================================
 class MeProfileView(APIView):
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(operation_description="Joriy user uchun Patient profili (bemorga mo‘ljallangan panel).")
     def get(self, request):
         patient = Patient.objects.filter(created_by=request.user, is_archived=False).order_by("-created_at").first()
         if not patient:
             return Response({"detail": "Patient topilmadi"}, status=404)
-        return Response(PatientProfileSerializer(patient).data)
+        return Response(PatientProfileSerializer(patient, context={"request": request}).data)
+
+    @swagger_auto_schema(
+        operation_summary="🖼 Profil rasmi (avatar) yuklash yoki yangilash",
+        operation_description="Bemor profil rasmi (avatar)ni yuklashi yoki yangilashi mumkin.",
+        consumes=['multipart/form-data'],
+        manual_parameters=[
+            openapi.Parameter(
+                name="avatar",
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_FILE,
+                required=True,
+                description="Yangi profil rasmi (maks. 5MB, JPG/PNG/GIF)"
+            ),
+        ],
+        responses={200: openapi.Response("Avatar muvaffaqiyatli yangilandi")},
+    )
+    def patch(self, request):
+        patient = Patient.objects.filter(created_by=request.user, is_archived=False).first()
+        if not patient:
+            return Response({"detail": "Patient topilmadi"}, status=404)
+
+        avatar_file = request.data.get("avatar")
+        if not avatar_file:
+            return Response({"detail": "Fayl yuborilmadi"}, status=400)
+
+        patient.avatar = avatar_file
+        patient.save(update_fields=["avatar", "updated_at"])
+        PatientHistory.objects.create(patient=patient, author=request.user, comment="Profil rasmi yangilandi")
+
+        return Response({
+            "success": True,
+            "avatar_url": request.build_absolute_uri(patient.avatar.url)
+        }, status=200)
