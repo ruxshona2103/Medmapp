@@ -3,7 +3,7 @@ from core.models import Stage, Tag
 from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
 
 
-# --- Oddiy helper serializerlar (agar kerak bo'lsa boshqa joylarda) ---
+# --- Oddiy helper serializerlar ---
 class PatientDocumentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.StringRelatedField(read_only=True)
 
@@ -25,7 +25,6 @@ class PatientHistorySerializer(serializers.ModelSerializer):
 
 # === Kanban/list ko'rinishi: faqat ID’lar ===
 class PatientListSerializer(serializers.ModelSerializer):
-    # E'TIBOR: source YO'Q. DRF modeldagi stage_id/tag_id ustunlarini o'zi oladi.
     stage_id = serializers.IntegerField(read_only=True, allow_null=True)
     tag_id = serializers.IntegerField(read_only=True, allow_null=True)
 
@@ -37,14 +36,15 @@ class PatientListSerializer(serializers.ModelSerializer):
             "gender",
             "phone_number",
             "email",
-            "stage_id",   # <-- faqat ID
-            "tag_id",     # <-- faqat ID
+            "stage_id",
+            "tag_id",
+            "avatar",  # 🆕 qo‘shildi
             "created_at",
         ]
         ref_name = "PatientListSerializer"
 
 
-# === Batafsil ko'rinish: ham faqat ID’lar (TZ talabi) ===
+# === Batafsil ko'rinish ===
 class PatientDetailSerializer(serializers.ModelSerializer):
     stage_id = serializers.IntegerField(read_only=True, allow_null=True)
     tag_id = serializers.IntegerField(read_only=True, allow_null=True)
@@ -62,8 +62,9 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             "email",
             "complaints",
             "previous_diagnosis",
-            "stage_id",   # <-- faqat ID
-            "tag_id",     # <-- faqat ID
+            "stage_id",
+            "tag_id",
+            "avatar",  # 🆕 qo‘shildi
             "created_at",
             "updated_at",
             "history",
@@ -72,8 +73,10 @@ class PatientDetailSerializer(serializers.ModelSerializer):
         ref_name = "PatientDetailSerializer"
 
 
-# === Create/Update: qolgan maydonlar; stage/tag FK sifatida kelishi mumkin ===
+# === Create/Update serializer (Swagger’da rasm yuklash chiqadi) ===
 class PatientCreateUpdateSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=False, allow_null=True)  # 🆕
+
     class Meta:
         model = Patient
         fields = [
@@ -85,8 +88,9 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
             "email",
             "complaints",
             "previous_diagnosis",
-            "tag",    # POST/PATCH da ID yuboriladi (DRF FKga mos)
-            "stage",  # POST/PATCH da ID yuboriladi (DRF FKga mos)
+            "avatar",  # 🆕 shu joyda Swagger’da upload chiqadi
+            "tag",
+            "stage",
         ]
         ref_name = "PatientCreateUpdateSerializer"
 
@@ -101,10 +105,11 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         ref_name = "PatientChatMessageSerializer"
 
 
-# === Bemorga mo'ljallangan profil: faqat ID’lar ===
+# === Bemorga mo'ljallangan profil (frontenddagi profil sozlamalari uchun) ===
 class PatientProfileSerializer(serializers.ModelSerializer):
     stage_id = serializers.IntegerField(read_only=True, allow_null=True)
     tag_id = serializers.IntegerField(read_only=True, allow_null=True)
+    avatar = serializers.ImageField(required=False, allow_null=True)  # 🆕 qo‘shildi
 
     class Meta:
         model = Patient
@@ -118,8 +123,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "email",
             "complaints",
             "previous_diagnosis",
-            "stage_id",  # <-- faqat ID
-            "tag_id",    # <-- faqat ID
+            "stage_id",
+            "tag_id",
+            "avatar",
             "created_at",
             "updated_at",
         ]

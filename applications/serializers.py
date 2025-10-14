@@ -90,3 +90,41 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
             comment="🪶 Ariza maʼlumotlari yangilandi"
         )
         return instance
+
+# -------------------------------------------OPERATOR PANELI------------------------------------------------------------
+from rest_framework import serializers
+from .models import Application
+from patients.models import Patient
+
+
+class CompletedApplicationSerializer(serializers.ModelSerializer):
+    """✅ Tugallangan va rad etilgan murojaatlar uchun serializer"""
+
+    patient_name = serializers.CharField(source="patient.full_name", read_only=True)
+    phone_number = serializers.CharField(source="patient.phone_number", read_only=True)
+    clinic = serializers.CharField(source="clinic_name", read_only=True)
+    final_conclusion = serializers.CharField(read_only=True)
+    status_label = serializers.SerializerMethodField()
+    date = serializers.DateField(source="updated_at", format="%Y-%m-%d", read_only=True)
+
+    class Meta:
+        model = Application
+        fields = [
+            "id",
+            "application_id",
+            "patient_name",
+            "phone_number",
+            "final_conclusion",
+            "clinic",
+            "date",
+            "status",
+            "status_label",
+        ]
+
+    def get_status_label(self, obj):
+        """Frontend uchun rangli badge nomini qaytaradi"""
+        if obj.status == "completed":
+            return "Tugatilgan"
+        elif obj.status == "rejected":
+            return "Rad etilgan"
+        return "Boshqa"
