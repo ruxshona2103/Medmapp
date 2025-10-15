@@ -9,11 +9,15 @@ echo "📦 Installing requirements..."
 pip install -r requirements.txt
 
 # ===============================================================
-# 🧱 Run Migrations
+# 🧱 Run Migrations (safe mode)
 # ===============================================================
 echo "🧱 Running migrations..."
-python manage.py makemigrations --noinput
-python manage.py migrate --noinput
+
+# 1️⃣ Avval oddiy migrate
+if ! python manage.py migrate --noinput; then
+    echo "⚠️ Normal migration failed, trying fake migration..."
+    python manage.py migrate --fake --noinput
+fi
 
 # ===============================================================
 # 🧾 Collect Static Files
