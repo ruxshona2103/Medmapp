@@ -43,10 +43,20 @@ class TransferRequestSerializer(serializers.ModelSerializer):
         return TransferRequest.objects.create(user=self.context["request"].user, **validated_data)
 
 
+
+
 class HotelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hotel
         fields = ["id", "name", "address", "image", "stars", "price_per_night"]
+
+
+class HotelImageSerializer(serializers.ModelSerializer):
+    """Faqat image upload uchun serializer"""
+    class Meta:
+        model = Hotel
+        fields = ["image"]
+
 
 
 class BookingSerializer(serializers.ModelSerializer):
