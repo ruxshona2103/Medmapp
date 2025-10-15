@@ -43,8 +43,6 @@ else:
         User.objects.create_superuser(
             phone_number=phone,
             password="${DJANGO_SUPERUSER_PASSWORD}",
-            full_name="${DJANGO_SUPERUSER_FULLNAME}",
-            email="${DJANGO_SUPERUSER_EMAIL}",
         )
         print("✅ Superuser created successfully.")
     else:
