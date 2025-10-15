@@ -23,11 +23,42 @@ from patients.models import Patient
 # ===============================================================
 # 🩺 APPLICATION CRUD (Frontend: "Mening Tashxislarim" sahifasi)
 # ===============================================================
+from django.db.models import Q
+from rest_framework import viewsets, status, permissions
+from rest_framework.response import Response
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+from .models import Application, ApplicationHistory
+from .serializers import (
+    ApplicationSerializer,
+    ApplicationCreateUpdateSerializer
+)
+from patients.models import Patient
+from core.models import Stage
+
+
+from django.db.models import Q
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+from .models import Application, ApplicationHistory
+from .serializers import (
+    ApplicationSerializer,
+    ApplicationCreateUpdateSerializer
+)
+from patients.models import Patient
+from core.models import Stage
+
+
 class ApplicationViewSet(viewsets.ModelViewSet):
     """
     🩺 **Mening Tashxislarim (Arizalar) API**
     - Bemor o‘zi yaratgan arizalarni ko‘radi
     - Operator va admin barcha arizalarni boshqaradi
+    - `application_id` (MED-XXXX) yaratishda va javobda chiqadi
     """
     queryset = Application.objects.filter(is_archived=False).select_related("patient", "stage")
     permission_classes = [permissions.IsAuthenticated]
@@ -38,52 +69,73 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         return ApplicationSerializer
 
     def get_queryset(self):
-        # 🛡 Swagger yuklanganda xatolikdan saqlanish
         if getattr(self, 'swagger_fake_view', False):
             return Application.objects.none()
 
         user = self.request.user
-        qs = Application.objects.filter(is_archived=False)
+        qs = Application.objects.filter(is_archived=False).select_related("patient", "stage")
 
         if getattr(user, "role", "patient") == "patient" and hasattr(user, "phone_number"):
             patient = Patient.objects.filter(phone_number=user.phone_number).first()
             if patient:
                 qs = qs.filter(patient=patient)
-        return qs.select_related("patient", "stage").prefetch_related("documents", "history")
+
+        return qs.prefetch_related("documents", "history")
 
     # 📋 Arizalar ro‘yxatini olish
     @swagger_auto_schema(
         operation_summary="📋 Arizalar ro‘yxatini olish",
-        operation_description="Bemor faqat o‘z arizalarini, operator esa barcha arizalarni ko‘radi.",
+        operation_description="Arizalarni ID, klinika nomi, bosqich yoki holat bo‘yicha filtrlash mumkin.",
         manual_parameters=[
-            openapi.Parameter(
-                "stage",
-                openapi.IN_QUERY,
-                type=openapi.TYPE_INTEGER,
-                description="Filtrlash uchun Stage ID (ixtiyoriy)."
-            )
+            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Ariza ID (masalan MED-56162), klinika yoki bemor ismi bo‘yicha qidirish"),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              enum=["all", "new", "in_progress", "completed", "rejected"],
+                              description="Ariza holati bo‘yicha filter"),
+            openapi.Parameter("stage", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Filtrlash uchun Stage ID (ixtiyoriy)")
         ],
         responses={200: ApplicationSerializer(many=True)},
-        tags=["Applications"],
+        tags=["Applications"]
     )
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
+        qs = self.get_queryset()
+
+        search = request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                Q(application_id__icontains=search)
+                | Q(clinic_name__icontains=search)
+                | Q(patient__full_name__icontains=search)
+            )
+
+        status_filter = request.query_params.get("status")
+        if status_filter and status_filter.lower() != "all":
+            qs = qs.filter(status=status_filter)
+
+        stage_id = request.query_params.get("stage")
+        if stage_id:
+            qs = qs.filter(stage_id=stage_id)
+
+        serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     # 🆕 Yangi ariza yaratish
     @swagger_auto_schema(
         operation_summary="🆕 Yangi ariza yaratish",
-        operation_description="Bemor yangi ariza (anketa) yuboradi.",
+        operation_description="Bemor yangi ariza yuboradi. Natijada `application_id` (masalan MED-56162) qaytadi.",
         request_body=ApplicationCreateUpdateSerializer,
         responses={201: ApplicationSerializer},
         tags=["Applications"],
     )
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return Response([serializer.data], status=status.HTTP_201_CREATED)
+
+        application = self.perform_create(serializer)
+
+        response_data = ApplicationSerializer(application, context={"request": request}).data
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -100,24 +152,38 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         else:
             patient = serializer.validated_data.get("patient")
 
-        application = serializer.save(patient=patient, stage=default_stage, status="pending")
+        application = serializer.save(patient=patient, stage=default_stage, status="new")
+
+        # 🧾 Tarixga yozuv
         ApplicationHistory.objects.create(
             application=application,
-            author=self.request.user,
+            author=user,
             comment="📝 Yangi ariza yaratildi"
         )
+        return application
 
-    # 📄 Bitta arizani olish
+    # 📄 Bitta arizani olish (application_id orqali ham)
     @swagger_auto_schema(
         operation_summary="📄 Bitta arizani olish",
+        operation_description="Ariza ID yoki raqam (path orqali) bo‘yicha arizani olish. Masalan: `/applications/applications/?application_id=MED-56162`",
+        manual_parameters=[
+            openapi.Parameter("application_id", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Ariza ID bo‘yicha filter (masalan: MED-56162)")
+        ],
         responses={200: ApplicationSerializer},
-        tags=["Applications"],
+        tags=["Applications"]
     )
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
-        return Response([serializer.data], status=status.HTTP_200_OK)
+        app_id = request.query_params.get("application_id")
+        if app_id:
+            instance = Application.objects.filter(application_id=app_id).first()
+            if not instance:
+                return Response({"detail": "Ariza topilmadi"}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            instance = self.get_object()
 
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 # ===============================================================
 # 📎 HUJJATLAR (Document)
