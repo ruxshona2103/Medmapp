@@ -34,11 +34,35 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = ["id", "application", "file", "description", "uploaded_by", "uploaded_at"]
         read_only_fields = ["id", "uploaded_by", "uploaded_at", "application"]
 
+from rest_framework import serializers
+from .models import Application, ApplicationHistory, Document
+from core.models import Stage
+from patients.models import Patient
 
-# 🧾 Arizalar ro‘yxati / tafsilot
+
+# 🧾 Ariza tarixi serializer
+class ApplicationHistorySerializer(serializers.ModelSerializer):
+    author_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApplicationHistory
+        fields = ["id", "author_name", "comment", "created_at"]
+
+    def get_author_name(self, obj):
+        return getattr(obj.author, "get_full_name", lambda: str(obj.author))()
+
+
+# 📎 Hujjat serializer
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = ["id", "file", "description", "uploaded_at"]
+
+
+# 🔹 Ariza asosiy serializer
 class ApplicationSerializer(serializers.ModelSerializer):
     patient = serializers.PrimaryKeyRelatedField(queryset=Patient.objects.all(), required=True)
-    stage = StageSerializer(read_only=True)
+    stage = serializers.SerializerMethodField()
     documents = DocumentSerializer(many=True, read_only=True)
     history = ApplicationHistorySerializer(many=True, read_only=True)
 
@@ -55,23 +79,26 @@ class ApplicationSerializer(serializers.ModelSerializer):
             "documents", "history", "is_archived"
         ]
 
+    def get_stage(self, obj):
+        return getattr(obj.stage, "title", None)
 
-# ✍️ Ariza yaratish / yangilash
+
+# ✍️ Ariza yaratish / yangilash serializer
 class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
     stage = serializers.PrimaryKeyRelatedField(queryset=Stage.objects.all(), required=False)
     patient = serializers.PrimaryKeyRelatedField(queryset=Patient.objects.all(), required=True)
-    id = serializers.IntegerField(read_only=True)
+    application_id = serializers.CharField(read_only=True)  # natijada ko‘rsatish uchun qo‘shildi
+
     class Meta:
         model = Application
         fields = [
-            "id", "patient", "clinic_name", "complaint", "diagnosis",
-            "final_conclusion", "stage", "status", "comment"
+            "id", "application_id", "patient", "clinic_name", "complaint",
+            "diagnosis", "final_conclusion", "stage", "status", "comment"
         ]
 
     def create(self, validated_data):
         request = self.context.get("request")
         application = Application.objects.create(**validated_data)
-        # tarixga yozuv
         ApplicationHistory.objects.create(
             application=application,
             author=getattr(request, "user", None),
@@ -90,6 +117,7 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
             comment="🪶 Ariza maʼlumotlari yangilandi"
         )
         return instance
+
 
 # -------------------------------------------OPERATOR PANELI------------------------------------------------------------
 from rest_framework import serializers
