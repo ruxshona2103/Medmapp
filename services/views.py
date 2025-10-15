@@ -1,3 +1,4 @@
+from django.db import models
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -122,12 +123,92 @@ class BookingViewSet(viewsets.ModelViewSet):
 
 
 class HotelViewSet(viewsets.ModelViewSet):
-    queryset = Hotel.objects.all()
+    """
+    Mehmonxonalar ro'yxati.
+    Filtrlar:
+    - search: nomi yoki manzili bo‘yicha
+    - min_price, max_price: narx oralig‘ida
+    - stars: yulduzlar soni bo‘yicha
+    """
+    queryset = Hotel.objects.all().order_by("name")
     serializer_class = HotelSerializer
     permission_classes = [HotelPermission]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name", "address"]
 
+    @swagger_auto_schema(
+        tags=["hotels"],
+        operation_description="Mehmonxonalar ro'yxati (filtrlar: search, min_price, max_price, stars).",
+        manual_parameters=[
+            openapi.Parameter(
+                "search",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description="Mehmonxona nomi yoki manzili bo‘yicha qidirish",
+            ),
+            openapi.Parameter(
+                "min_price",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_NUMBER,
+                description="Minimal narx (masalan: 50)",
+            ),
+            openapi.Parameter(
+                "max_price",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_NUMBER,
+                description="Maksimal narx (masalan: 200)",
+            ),
+            openapi.Parameter(
+                "stars",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Yulduzlar soni (masalan: 3, 4, 5)",
+            ),
+            openapi.Parameter(
+                "page",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifa raqami (pagination uchun)",
+            ),
+        ],
+        responses={200: openapi.Response("OK", HotelSerializer(many=True))},
+    )
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+
+        # 🔍 Search — name va address bo‘yicha
+        search = request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                models.Q(name__icontains=search)
+                | models.Q(address__icontains=search)
+            )
+
+        # 💰 Price filter
+        min_price = request.query_params.get("min_price")
+        max_price = request.query_params.get("max_price")
+        if min_price:
+            qs = qs.filter(price_per_night__gte=min_price)
+        if max_price:
+            qs = qs.filter(price_per_night__lte=max_price)
+
+        # ⭐ Stars filter
+        stars = request.query_params.get("stars")
+        if stars:
+            qs = qs.filter(stars=stars)
+
+        # 🔢 Pagination (oddiy)
+        page = int(request.query_params.get("page", 1))
+        per_page = 10
+        start = (page - 1) * per_page
+        end = start + per_page
+
+        serializer = self.get_serializer(qs[start:end], many=True, context={"request": request})
+        return Response({
+            "count": qs.count(),
+            "page": page,
+            "results": serializer.data
+        })
 
 class TranslatorCreateView(generics.CreateAPIView):
     serializer_class = TranslatorRequestSerializer

@@ -122,17 +122,19 @@ CHANNEL_LAYERS = {
 #     }
 # }
 
-
 import os
 import dj_database_url
 
+DATABASE_URL = "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
+
 DATABASES = {
     "default": dj_database_url.config(
-        default=os.getenv("DATABASE_URL"),
+        default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=True  # Render uchun SSL ulanish
+        ssl_require=True
     )
 }
+
 
 
 AUTH_PASSWORD_VALIDATORS = [

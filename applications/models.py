@@ -34,8 +34,7 @@ class Application(models.Model):
     complaint = models.TextField(blank=True, null=True,verbose_name="Shikoyatlar")
     diagnosis = models.TextField(blank=True,null=True, verbose_name="Tashxis")
     final_conclusion = models.TextField(blank=True,null=True,verbose_name="Yakuniy xulosa" )
-    stage = models.ForeignKey(
-        Stage, on_delete=models.SET_NULL, null=True,blank=True,related_name="applications",verbose_name="Bosqich")
+    stage = models.ForeignKey(Stage, on_delete=models.SET_NULL, null=True,blank=True,related_name="applications",verbose_name="Bosqich")
     status = models.CharField(max_length=20,choices=STATUS_CHOICES,default="new",verbose_name="Holat")
     comment = models.TextField(blank=True,null=True,verbose_name="Izoh")
     created_at = models.DateTimeField( auto_now_add=True, verbose_name="Yaratilgan vaqt")

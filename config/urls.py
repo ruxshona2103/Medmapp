@@ -27,14 +27,14 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 
     # app urls
-    path("api/auth/", include("authentication.urls")),
-    path("api/services/", include("services.urls")),
-    path("api/applications/", include("applications.urls")),
+    path("api/", include("authentication.urls")),
+    path("api/", include("services.urls")),
+    path("api/", include("applications.urls")),
     path("api/", include("core.urls")),
-    path("api/consultations/", include("consultations.urls")),
-    path("api/reviews/", include("reviews.urls")),
-    path("api/patients/", include("patients.urls")),
-    path('api/operator/', include('applications.urls_operator')),
+    path("api/", include("consultations.urls")),
+    path("api/", include("reviews.urls")),
+    path("api/", include("patients.urls")),
+    path('api/', include('applications.urls_operator')),
 
     # swagger/redoc
     re_path(r"^swagger(?P<format>\.json|\.yaml)$", schema_view.without_ui(cache_timeout=0), name="schema-json"),

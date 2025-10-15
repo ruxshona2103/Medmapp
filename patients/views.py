@@ -1,7 +1,6 @@
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -9,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-
+from rest_framework import viewsets, status, permissions,  mixins
 from core.models import Stage
 from .models import Patient, PatientHistory, PatientDocument, Contract
 from .serializers import (
@@ -27,14 +26,14 @@ from .utils import get_default_stage
 # ===============================================================
 class PatientViewSet(viewsets.ModelViewSet):
     """
-    Bemorlar (TZ 3.1):
-    - GET /patients/ — Kanban uchun ro'yxat (search, stage_id, tag_id, page, per_page)
+    🧾 **Bemorlar (TZ 3.1):**
+    - GET /patients/ — Kanban uchun ro'yxat (search, stage_id, tag_id, page, per_page, patient_id)
     - POST /patients/ — Yangi bemor yaratish (tarixga "Bemor profili yaratildi")
     - GET /patients/{id}/ — Bemorning to'liq ma'lumotlari (tarix, hujjatlar bilan)
     - PUT /patients/{id}/ — Ma'lumotlarni tahrirlash (har bir o'zgarish tarixga yoziladi)
     - DELETE /patients/{id}/ — Soft delete (arxivlash)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
     queryset = Patient.objects.filter(is_archived=False).select_related("stage", "tag").order_by("-created_at")
 
     def get_serializer_class(self):
@@ -44,35 +43,53 @@ class PatientViewSet(viewsets.ModelViewSet):
             return PatientDetailSerializer
         return PatientCreateUpdateSerializer
 
+    # ===================== 📋 RO‘YXAT (LIST) =====================
     @swagger_auto_schema(
-        operation_description="Barcha bemorlar ro'yxati (Kanban). Filtrlar: search, stage_id, tag_id, page, per_page.",
+        operation_description="Barcha bemorlar ro'yxati (Kanban). Filtrlar: search, stage_id, tag_id, patient_id, page, per_page.",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Ism/telefon/email bo‘yicha qidirish"),
-            openapi.Parameter("stage_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Bosqich ID"),
-            openapi.Parameter("tag_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Teg ID"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
-            openapi.Parameter("per_page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifadagi elementlar soni"),
+            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Ism / telefon / email bo‘yicha qidirish"),
+            openapi.Parameter("stage_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Bosqich ID bo‘yicha filter"),
+            openapi.Parameter("tag_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Teg ID bo‘yicha filter"),
+            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Alohida bemor ID bo‘yicha filter (masalan: /patients/patients/?patient_id=12)"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifa raqami (pagination)"),
+            openapi.Parameter("per_page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifadagi elementlar soni (pagination)"),
         ],
         responses={200: PatientListSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
-        search = request.query_params.get("search")
-        stage_id = request.query_params.get("stage_id")
-        tag_id = request.query_params.get("tag_id")
 
+        # 🔍 Qidiruv
+        search = request.query_params.get("search")
         if search:
             qs = qs.filter(
-                Q(full_name__icontains=search) |
-                Q(phone_number__icontains=search) |
-                Q(email__icontains=search)
+                Q(full_name__icontains=search)
+                | Q(phone_number__icontains=search)
+                | Q(email__icontains=search)
             )
+
+        # 🧩 Bosqich bo‘yicha filter
+        stage_id = request.query_params.get("stage_id")
         if stage_id:
             qs = qs.filter(stage_id=stage_id)
+
+        # 🏷 Teg bo‘yicha filter
+        tag_id = request.query_params.get("tag_id")
         if tag_id:
             qs = qs.filter(tag_id=tag_id)
 
-        # Simple pagination
+        # 🧍‍♂️ Patient ID bo‘yicha filter (yangi)
+        patient_id = request.query_params.get("patient_id")
+        if patient_id:
+            qs = qs.filter(id=patient_id)
+
+        # 🔢 Oddiy pagination
         page = int(request.query_params.get("page", 1))
         per_page = int(request.query_params.get("per_page", 20))
         start = (page - 1) * per_page
@@ -86,6 +103,7 @@ class PatientViewSet(viewsets.ModelViewSet):
             "results": serializer.data
         })
 
+    # ===================== 🆕 YARATISH =====================
     @swagger_auto_schema(
         operation_description="Yangi bemor yaratish. Tarixga 'Bemor profili yaratildi' yoziladi. Stage/tag kelmasa — default qo‘yiladi.",
         request_body=PatientCreateUpdateSerializer,
@@ -107,6 +125,7 @@ class PatientViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
+    # ===================== 📄 KO‘RISH (BIRTA) =====================
     @swagger_auto_schema(
         operation_description="Bitta bemorning to‘liq ma'lumotlari (tarix va hujjatlar bilan).",
         responses={200: PatientDetailSerializer},
@@ -115,6 +134,7 @@ class PatientViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         return Response(PatientDetailSerializer(instance, context={"request": request}).data)
 
+    # ===================== ✏️ TAHRIRLASH =====================
     @swagger_auto_schema(
         operation_description="Bemor ma'lumotlarini yangilash. Har bir o‘zgarish PatientHistoryga yoziladi.",
         request_body=PatientCreateUpdateSerializer,
@@ -128,6 +148,7 @@ class PatientViewSet(viewsets.ModelViewSet):
         PatientHistory.objects.create(patient=patient, author=request.user, comment="Bemor ma'lumotlari yangilandi")
         return Response(PatientDetailSerializer(patient, context={"request": request}).data)
 
+    # ===================== 🗑 ARXIVLASH (SOFT DELETE) =====================
     @swagger_auto_schema(operation_description="Bemorni arxivlash (soft delete).")
     def destroy(self, request, *args, **kwargs):
         patient = self.get_object()
@@ -137,6 +158,7 @@ class PatientViewSet(viewsets.ModelViewSet):
         PatientHistory.objects.create(patient=patient, author=request.user, comment="Bemor arxivlandi (soft delete)")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    # ===================== 🔁 BOSQICHNI O‘ZGARTIRISH =====================
     @swagger_auto_schema(
         method="patch",
         operation_description="Bemorning bosqichini o‘zgartirish.",
@@ -164,7 +186,6 @@ class PatientViewSet(viewsets.ModelViewSet):
             comment=comment or f"Bosqich '{stage.title}' ga o‘zgartirildi",
         )
         return Response({"success": True})
-
 
 # ===============================================================
 # 🧩 3.4 — HUJJATLAR

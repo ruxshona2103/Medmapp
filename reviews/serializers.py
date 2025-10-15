@@ -10,11 +10,25 @@ class ClinicSerializer(serializers.ModelSerializer):
     rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
     rating_distribution = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()  # 🆕 Rasm URL preview uchun qo‘shildi
 
     class Meta:
         model = Clinic
-        fields = ["id", "name", "address", "phone", "description",
-                  "rating", "rating_count", "rating_distribution"]
+        fields = [
+            "id", "name", "address", "phone", "description",
+            "image",  # 🆕 Swagger’da preview chiqadi
+            "rating", "rating_count", "rating_distribution",
+        ]
+
+    def get_image(self, obj):
+        """Swagger preview uchun to‘liq media URL qaytaradi"""
+        request = self.context.get("request")
+        if hasattr(obj, "image") and obj.image:
+            try:
+                return request.build_absolute_uri(obj.image.url)
+            except Exception:
+                return None
+        return None
 
     def get_rating(self, obj):
         return round(obj.reviews.aggregate(a=Avg("rating"))["a"] or 0, 1)
@@ -40,7 +54,8 @@ class DoctorSerializer(serializers.ModelSerializer):
         dc = getattr(obj, "doctor_clinic", None)
         if not dc:
             return None
-        return ClinicSerializer(dc.clinic).data
+        # ⚙️ Contextni ham uzatamiz, rasm URL preview to‘g‘ri chiqishi uchun
+        return ClinicSerializer(dc.clinic, context=self.context).data
 
 
 class ReviewSerializer(serializers.ModelSerializer):
