@@ -5,3 +5,17 @@ services:
     buildCommand: "./build.sh"
     startCommand: "gunicorn config.wsgi:application"
     postdeployCommand: "python manage.py migrate --noinput"
+
+    envVars:
+      - key: DEBUG
+        value: 'False'
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: SECRET_KEY
+        generateValue: true
+
+    disk:
+      name: media
+      mountPath: /opt/render/project/src/media
