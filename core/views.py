@@ -55,12 +55,13 @@ class TagViewSet(viewsets.ModelViewSet):
     - Operator yoki admin foydalanuvchilar uchun CRUD
     - GET /tags/ — barcha teglar ro‘yxati
     - POST /tags/ — yangi teg yaratish
+    - PUT/PATCH /tags/{id}/ — tegni yangilash
     - DELETE /tags/{id}/ — tegni o‘chirish
     """
     queryset = Tag.objects.all().order_by("id")
     serializer_class = TagSerializer
     permission_classes = [IsOperator]
-    http_method_names = ["get", "post", "delete"]
+    http_method_names = ["get", "post", "put", "patch", "delete"]
 
     @swagger_auto_schema(operation_description="Barcha teglar ro‘yxatini olish.")
     def list(self, request, *args, **kwargs):
@@ -69,6 +70,14 @@ class TagViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(operation_description="Yangi teg yaratish (faqat operator yoki admin uchun).")
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Tegni to‘liq yangilash (PUT).")
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_description="Tegni qisman yangilash (PATCH).")
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(operation_description="Tegni o‘chirish (ID bo‘yicha).")
     def destroy(self, request, *args, **kwargs):
