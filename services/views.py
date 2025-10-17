@@ -297,40 +297,51 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-
 class OrdersMeView(APIView):
     """
     Bemor (patient) o'z buyurtma bergan barcha servicelarni ko'rish uchun.
     URL: /orders/me (GET)
     """
-
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        # Faqat patient roli uchun (agar roli 'user' yoki 'patient' bo'lsa)
-        if user.role not in ["user", "patient"]:  # Rolni loyihangizga moslashtiring
+
+        # Faqat patient roli uchun
+        if user.role not in ["user", "patient"]:
             return Response(
-                {"detail": "Faqat bemorlar uchun."}, status=status.HTTP_403_FORBIDDEN
+                {"detail": "Faqat bemorlar uchun."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         data = {
             "visas": VisaRequestSerializer(
-                VisaRequest.objects.filter(user=user), many=True
+                VisaRequest.objects.filter(user=user),
+                many=True,
+                context={"request": request}
             ).data,
             "transfers": TransferRequestSerializer(
-                TransferRequest.objects.filter(user=user), many=True
+                TransferRequest.objects.filter(user=user),
+                many=True,
+                context={"request": request}
             ).data,
             "translators": TranslatorRequestSerializer(
-                TranslatorRequest.objects.filter(user=user), many=True
+                TranslatorRequest.objects.filter(user=user),
+                many=True,
+                context={"request": request}
             ).data,
             "simcards": SimCardRequestSerializer(
-                SimCardRequest.objects.filter(user=user), many=True
+                SimCardRequest.objects.filter(user=user),
+                many=True,
+                context={"request": request}
             ).data,
             "bookings": BookingSerializer(
-                Booking.objects.filter(user=user), many=True
+                Booking.objects.filter(user=user),
+                many=True,
+                context={"request": request}
             ).data,
         }
+
         return Response(data)
 
 
@@ -339,28 +350,43 @@ class OrdersListView(APIView):
     Operator/admin/superadmin barcha buyurtmalarni ko'rish uchun.
     URL: /orders/ (GET)
     """
-
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
+
         if user.role not in ["admin", "superadmin", "operator"]:
             return Response(
                 {"detail": "Faqat operator/admin/superadmin uchun."},
-                status=status.HTTP_403_FORBIDDEN,
+                status=status.HTTP_403_FORBIDDEN
             )
 
         data = {
-            "visas": VisaRequestSerializer(VisaRequest.objects.all(), many=True).data,
+            "visas": VisaRequestSerializer(
+                VisaRequest.objects.all(),
+                many=True,
+                context={"request": request}
+            ).data,
             "transfers": TransferRequestSerializer(
-                TransferRequest.objects.all(), many=True
+                TransferRequest.objects.all(),
+                many=True,
+                context={"request": request}
             ).data,
             "translators": TranslatorRequestSerializer(
-                TranslatorRequest.objects.all(), many=True
+                TranslatorRequest.objects.all(),
+                many=True,
+                context={"request": request}
             ).data,
             "simcards": SimCardRequestSerializer(
-                SimCardRequest.objects.all(), many=True
+                SimCardRequest.objects.all(),
+                many=True,
+                context={"request": request}
             ).data,
-            "bookings": BookingSerializer(Booking.objects.all(), many=True).data,
+            "bookings": BookingSerializer(
+                Booking.objects.all(),
+                many=True,
+                context={"request": request}
+            ).data,
         }
+
         return Response(data)
