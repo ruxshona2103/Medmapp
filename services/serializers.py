@@ -22,42 +22,68 @@ class SafeModelSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(e.message_dict or e.messages)
         return attrs
 
-
 class VisaRequestSerializer(serializers.ModelSerializer):
+    passport_scan_url = serializers.SerializerMethodField()
+
     class Meta:
         model = VisaRequest
-        fields = ["id", "passport_scan", "note", "created_at"]
+        fields = ["id", "passport_scan", "passport_scan_url", "note", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def get_passport_scan_url(self, obj):
+        request = self.context.get("request")
+        if obj.passport_scan:
+            return request.build_absolute_uri(obj.passport_scan.url)
+        return None
 
     def create(self, validated_data):
         return VisaRequest.objects.create(user=self.context["request"].user, **validated_data)
 
-
 class TransferRequestSerializer(serializers.ModelSerializer):
+    ticket_scan_url = serializers.SerializerMethodField()
+
     class Meta:
         model = TransferRequest
-        fields = ["id", "flight_number", "arrival_datetime", "ticket_scan", "created_at"]
+        fields = ["id", "flight_number", "arrival_datetime", "ticket_scan", "ticket_scan_url", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def get_ticket_scan_url(self, obj):
+        request = self.context.get("request")
+        if obj.ticket_scan:
+            return request.build_absolute_uri(obj.ticket_scan.url)
+        return None
 
     def create(self, validated_data):
         return TransferRequest.objects.create(user=self.context["request"].user, **validated_data)
 
 
+class SimCardRequestSerializer(serializers.ModelSerializer):
+    passport_scan_url = serializers.SerializerMethodField()
 
+    class Meta:
+        model = SimCardRequest
+        fields = ["id", "passport_scan", "passport_scan_url", "note", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_passport_scan_url(self, obj):
+        request = self.context.get("request")
+        if obj.passport_scan:
+            return request.build_absolute_uri(obj.passport_scan.url)
+        return None
+
+    def create(self, validated_data):
+        return SimCardRequest.objects.create(user=self.context["request"].user, **validated_data)
 
 class HotelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hotel
         fields = ["id", "name", "address", "image", "stars", "price_per_night"]
 
-
 class HotelImageSerializer(serializers.ModelSerializer):
     """Faqat image upload uchun serializer"""
     class Meta:
         model = Hotel
         fields = ["image"]
-
-
 
 class BookingSerializer(serializers.ModelSerializer):
     hotel_name = serializers.CharField(source="hotel.name", read_only=True)
@@ -81,12 +107,3 @@ class TranslatorRequestSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return TranslatorRequest.objects.create(user=self.context["request"].user, **validated_data)
 
-
-class SimCardRequestSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SimCardRequest
-        fields = ["id", "passport_scan", "note", "created_at"]
-        read_only_fields = ["id", "created_at"]
-
-    def create(self, validated_data):
-        return SimCardRequest.objects.create(user=self.context["request"].user, **validated_data)
