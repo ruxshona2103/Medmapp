@@ -6,7 +6,6 @@ from django.shortcuts import redirect
 from rest_framework import permissions
 from django.conf import settings
 from django.conf.urls.static import static
-from config.api_docs import RoleAwareGenerator   # 👈
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -34,7 +33,6 @@ urlpatterns = [
     path("api/", include("consultations.urls")),
     path("api/", include("reviews.urls")),
     path("api/", include("patients.urls")),
-    path('api/', include('applications.urls_operator')),
 
     # swagger/redoc
     re_path(r"^swagger(?P<format>\.json|\.yaml)$", schema_view.without_ui(cache_timeout=0), name="schema-json"),
