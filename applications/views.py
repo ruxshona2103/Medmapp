@@ -1,30 +1,36 @@
+# ===============================================================
+# 🩺 APPLICATIONS MODULE (Tozalangan professional versiya)
+# ===============================================================
 from django.db import models
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
+from rest_framework import generics, viewsets, status, permissions
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
-from django.db.models import Q
-from rest_framework import viewsets, status, permissions
-from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import Application, ApplicationHistory, Document
 from .serializers import (
     ApplicationSerializer,
-    ApplicationCreateUpdateSerializer, DocumentSerializer, CompletedApplicationSerializer
+    ApplicationCreateUpdateSerializer,
+    DocumentSerializer,
+    CompletedApplicationSerializer,
 )
 from patients.models import Patient
 from core.models import Stage
 
 
+# ===============================================================
+# 🩺 APPLICATIONS – Yangi va jarayondagi murojaatlar
+# ===============================================================
 class ApplicationViewSet(viewsets.ModelViewSet):
     """
-    🩺 **Mening Tashxislarim (Arizalar) API**
+    🩺 Arizalar bilan ishlovchi asosiy API
     - Bemor o‘zi yaratgan arizalarni ko‘radi
-    - Operator va admin barcha arizalarni boshqaradi
-    - `application_id` (MED-XXXX) yaratishda va javobda chiqadi
+    - Operator barcha arizalarni boshqaradi
+    - Filter: status, sana (bitta), klinika nomi, stage, patient_id
     """
     queryset = Application.objects.filter(is_archived=False).select_related("patient", "stage")
     permission_classes = [permissions.IsAuthenticated]
@@ -35,13 +41,10 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         return ApplicationSerializer
 
     def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Application.objects.none()
-
         user = self.request.user
         qs = Application.objects.filter(is_archived=False).select_related("patient", "stage")
 
-        # 👤 Agar bemor bo‘lsa, faqat o‘z arizalarini ko‘radi
+        # 👤 Faqat bemor o‘z arizalarini ko‘radi
         if getattr(user, "role", "patient") == "patient" and hasattr(user, "phone_number"):
             patient = Patient.objects.filter(phone_number=user.phone_number).first()
             if patient:
@@ -49,164 +52,76 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
         return qs.prefetch_related("documents", "history")
 
-    # 📋 Arizalar ro‘yxatini olish (filter va search bilan)
+    # 📋 Arizalar ro‘yxatini olish
     @swagger_auto_schema(
-        operation_summary="📋 Arizalar ro‘yxatini olish",
-        operation_description="Arizalarni klinika nomi, bemor ID, bosqich yoki holat bo‘yicha filtrlash mumkin.",
+        operation_summary="📋 Arizalar ro‘yxatini olish (status va sana bo‘yicha filter bilan)",
+        operation_description=(
+            "Arizalarni holati yoki sana bo‘yicha filtrlash mumkin. "
+            "`status` (new, in_progress, completed, rejected), "
+            "`date` formati: YYYY-MM-DD"
+        ),
         manual_parameters=[
             openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Klinika nomi bo‘yicha qidirish (masalan: 'Shifo Clinic')"),
+                              description="Klinika yoki bemor nomi bo‘yicha qidirish"),
             openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
                               enum=["all", "new", "in_progress", "completed", "rejected"],
-                              description="Ariza holati bo‘yicha filter (Yangi, Jarayonda, Tugatilgan, Rad etilgan)"),
-            openapi.Parameter("stage", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Filtrlash uchun Stage ID (ixtiyoriy)"),
-            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Bemor ID bo‘yicha filter (operator uchun)")
+                              description="Ariza holati bo‘yicha filter"),
+            openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Aynan shu sanada yaratilgan murojaatlar (YYYY-MM-DD)"),
         ],
         responses={200: ApplicationSerializer(many=True)},
-        tags=["Applications"]
+        tags=["applications"]
     )
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
 
-        # 🔍 Qidiruv (clinic_name bo‘yicha)
+        # 🔍 Qidiruv (bemor yoki klinika bo‘yicha)
         search = request.query_params.get("search")
         if search:
-            qs = qs.filter(clinic_name__icontains=search)
+            qs = qs.filter(
+                models.Q(clinic_name__icontains=search)
+                | models.Q(patient__full_name__icontains=search)
+            )
 
         # ⚙️ Status filter
         status_filter = request.query_params.get("status")
         if status_filter and status_filter.lower() != "all":
-            qs = qs.filter(status=status_filter)
+            qs = qs.filter(status=status_filter.lower())
 
-        # 🧩 Stage filter
-        stage_id = request.query_params.get("stage")
-        if stage_id:
-            qs = qs.filter(stage_id=stage_id)
+        # 📅 Bitta sana bo‘yicha filter
+        filter_date = request.query_params.get("date")
+        if filter_date:
+            qs = qs.filter(created_at__date=filter_date)
 
-        # 👤 Patient ID filter
-        patient_id = request.query_params.get("patient_id")
-        if patient_id:
-            qs = qs.filter(patient_id=patient_id)
-
-        serializer = self.get_serializer(qs, many=True)
+        serializer = self.get_serializer(qs.order_by("-created_at"), many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-    # 📄 Bitta bemorning barcha arizalarini olish (id orqali)
-    @swagger_auto_schema(
-        operation_summary="📄 Bitta bemorning barcha arizalarini olish",
-        operation_description=(
-            "Bitta bemor (ID orqali) yuborgan barcha arizalarni olish. "
-            "Status va klinika nomi bo‘yicha filtr ishlaydi. Masalan: "
-            "`/applications/applications/5/?status=in_progress&search=Shifo`"
-        ),
-        manual_parameters=[
-            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              enum=["all", "new", "in_progress", "completed", "rejected"],
-                              description="Ariza holati bo‘yicha filter"),
-            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Klinika nomi bo‘yicha qidirish")
-        ],
-        responses={200: ApplicationSerializer(many=True)},
-        tags=["Applications"]
-    )
-    def retrieve(self, request, *args, **kwargs):
-        """🔹 Bitta bemorning barcha arizalarini filter bilan olish"""
-        patient_id = kwargs.get("pk")
-        patient = get_object_or_404(Patient, id=patient_id)
-
-        qs = Application.objects.filter(patient=patient, is_archived=False).select_related("stage")
-
-        # 🔍 Filtrlar
-        search = request.query_params.get("search")
-        if search:
-            qs = qs.filter(clinic_name__icontains=search)
-
-        status_filter = request.query_params.get("status")
-        if status_filter and status_filter.lower() != "all":
-            qs = qs.filter(status=status_filter)
-
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    # 🆕 Yangi ariza yaratish
-    @swagger_auto_schema(
-        operation_summary="🆕 Yangi ariza yaratish",
-        operation_description="Bemor yangi ariza yuboradi. Natijada `application_id` (masalan MED-56162) qaytadi.",
-        request_body=ApplicationCreateUpdateSerializer,
-        responses={201: ApplicationSerializer},
-        tags=["Applications"],
-    )
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-
-        application = self.perform_create(serializer)
-        response_data = ApplicationSerializer(application, context={"request": request}).data
-        return Response(response_data, status=status.HTTP_201_CREATED)
-
-    def perform_create(self, serializer):
-        user = self.request.user
-        default_stage = Stage.objects.filter(code_name="yangi").first() or Stage.objects.first()
-
-        if getattr(user, "role", "patient") == "patient":
-            patient, _ = Patient.objects.get_or_create(
-                created_by=user,
-                defaults={
-                    "full_name": f"{user.first_name} {user.last_name}".strip(),
-                    "phone_number": getattr(user, "phone_number", None)
-                }
-            )
-        else:
-            patient = serializer.validated_data.get("patient")
-
-        application = serializer.save(patient=patient, stage=default_stage, status="new")
-
-        ApplicationHistory.objects.create(
-            application=application,
-            author=user,
-            comment="📝 Yangi ariza yaratildi"
-        )
-        return application
 
 # ===============================================================
-# 📎 HUJJATLAR (Document)
+# 📎 HUJJATLAR (Documents)
 # ===============================================================
 class DocumentListCreateView(generics.ListCreateAPIView):
     """
-    📂 **Ariza hujjatlari**
-    - GET → Arizaga biriktirilgan hujjatlar ro‘yxati
-    - POST → Yangi hujjat yuklash (PDF, JPG, PNG)
+    📂 Arizaga biriktirilgan hujjatlar bilan ishlaydi
+    - GET → Hujjatlar ro‘yxatini olish
+    - POST → Fayl yuklash (PDF, JPG, PNG)
     """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Document.objects.none()
-        application_id = self.kwargs.get("application_id")
-        return Document.objects.filter(application__id=application_id)
+        app_id = self.kwargs.get("application_id")
+        return Document.objects.filter(application__id=app_id)
 
     @swagger_auto_schema(
         operation_summary="📎 Arizaga hujjat yuklash",
         operation_description="PDF, JPG, PNG formatlarini yuklash uchun API.",
         consumes=["multipart/form-data"],
         manual_parameters=[
-            openapi.Parameter(
-                name="file",
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_FILE,
-                required=True,
-                description="Yuklanadigan fayl (PDF/JPG/PNG)"
-            ),
-            openapi.Parameter(
-                name="description",
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_STRING,
-                description="Fayl tavsifi (ixtiyoriy)"
-            )
+            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True,
+                              description="Yuklanadigan fayl (PDF/JPG/PNG)"),
+            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING,
+                              description="Fayl tavsifi (ixtiyoriy)")
         ],
         responses={201: DocumentSerializer},
         tags=["applications"],
@@ -214,15 +129,11 @@ class DocumentListCreateView(generics.ListCreateAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return Response([serializer.data], status=status.HTTP_201_CREATED)
-
-    def perform_create(self, serializer):
-        application_id = self.kwargs.get("application_id")
-        user = self.request.user
-        application = get_object_or_404(Application, id=application_id)
-        serializer.save(application=application, uploaded_by=user)
-        ApplicationHistory.objects.create(application=application, author=user, comment="📄 Hujjat yuklandi")
+        app_id = self.kwargs.get("application_id")
+        application = get_object_or_404(Application, id=app_id)
+        serializer.save(application=application, uploaded_by=request.user)
+        ApplicationHistory.objects.create(application=application, author=request.user, comment="📄 Hujjat yuklandi")
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 # ===============================================================
@@ -231,91 +142,98 @@ class DocumentListCreateView(generics.ListCreateAPIView):
 class ChangeApplicationStageView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        # Swagger uchun himoya
-        if getattr(self, 'swagger_fake_view', False):
-            return Application.objects.none()
-        return Application.objects.all()
-
     @swagger_auto_schema(
         operation_summary="🔁 Bosqichni o‘zgartirish",
+        operation_description="Yangi Stage ID va izoh yuboriladi.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["new_stage_id"],
             properties={
-                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi Stage ID"),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh (ixtiyoriy)")
+                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING),
             },
         ),
         responses={200: openapi.Response("Bosqich muvaffaqiyatli o‘zgartirildi")},
-        tags=["Applications"],
+        tags=["applications"],
     )
     def patch(self, request, application_id):
-        user = request.user
-        if getattr(user, "role", "patient") == "patient":
+        if getattr(request.user, "role", "") == "patient":
             raise PermissionDenied("Sizda bosqichni o‘zgartirishga ruxsat yo‘q.")
-
-        application = get_object_or_404(Application, id=application_id)
-        new_stage_id = request.data.get("new_stage_id")
-        if not new_stage_id:
-            return Response({"error": "'new_stage_id' majburiy."}, status=status.HTTP_400_BAD_REQUEST)
-
-        new_stage = get_object_or_404(Stage, id=new_stage_id)
-        old_stage = application.stage
-        application.stage = new_stage
-        application.save(update_fields=["stage", "updated_at"])
-
-        comment = request.data.get("comment") or f"Bosqich '{getattr(old_stage, 'title', '—')}' → '{new_stage.title}' ga o‘zgartirildi"
-        ApplicationHistory.objects.create(application=application, author=user, comment=comment)
-
-        return Response([{"success": True, "new_stage": new_stage.title}], status=status.HTTP_200_OK)
+        app = get_object_or_404(Application, id=application_id)
+        new_stage = get_object_or_404(Stage, id=request.data.get("new_stage_id"))
+        old_stage = app.stage
+        app.stage = new_stage
+        app.save(update_fields=["stage", "updated_at"])
+        comment = request.data.get("comment") or f"Bosqich '{old_stage}' → '{new_stage}' ga o‘zgartirildi"
+        ApplicationHistory.objects.create(application=app, author=request.user, comment=comment)
+        return Response({"success": True, "new_stage": new_stage.title})
 
 
 # ===============================================================
-# ✅ OPERATOR PANELI
+# ✅ OPERATOR PANELI – BAJARILGAN MUROJAATLAR
 # ===============================================================
 class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    🧾 Bajarilgan yoki rad etilgan murojaatlar API
+    🧾 Tugatilgan yoki rad etilgan murojaatlar (Operator uchun)
     """
     serializer_class = CompletedApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Application.objects.none()
-        return Application.objects.filter(status__in=["completed", "rejected"], is_archived=False).select_related("patient")
+        qs = Application.objects.filter(
+            status__in=["completed", "rejected"],
+            is_archived=False
+        ).select_related("patient")
 
-    @swagger_auto_schema(
-        manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, description="Bemor yoki klinika bo‘yicha qidirish", type=openapi.TYPE_STRING)
-        ],
-        tags=["Applications"],
-    )
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        search = request.query_params.get("search")
+        # 🔍 Qidiruv (bemor yoki klinika)
+        search = self.request.query_params.get("search")
         if search:
-            queryset = queryset.filter(
+            qs = qs.filter(
                 models.Q(patient__full_name__icontains=search)
                 | models.Q(clinic_name__icontains=search)
             )
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+
+        # ⚙️ Status filter
+        status_filter = self.request.query_params.get("status")
+        if status_filter and status_filter.lower() != "all":
+            qs = qs.filter(status=status_filter.lower())
+
+        return qs.order_by("-created_at")
+
+    @swagger_auto_schema(
+        operation_summary="🧾 Tugatilgan yoki rad etilgan murojaatlar ro‘yxati",
+        operation_description="Operator paneli uchun tugatilgan va rad etilgan murojaatlar (search, status filter bilan).",
+        manual_parameters=[
+            openapi.Parameter("search", openapi.IN_QUERY, description="Bemor yoki klinika bo‘yicha qidirish", type=openapi.TYPE_STRING),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              enum=["all", "completed", "rejected"], description="Status bo‘yicha filter"),
+        ],
+        responses={200: CompletedApplicationSerializer(many=True)},
+        tags=["applications"],  # 👈 yagona tag
+    )
+    def list(self, request, *args, **kwargs):
+        serializer = self.get_serializer(self.get_queryset(), many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="📄 Bitta tugatilgan yoki rad etilgan murojaat (id orqali)",
+        operation_description="Tugatilgan yoki rad etilgan murojaat tafsilotlarini olish uchun ishlatiladi.",
+        responses={200: CompletedApplicationSerializer()},
+        tags=["applications"],
+    )
+    def retrieve(self, request, *args, **kwargs):
+        app = get_object_or_404(Application, id=kwargs.get("pk"), status__in=["completed", "rejected"])
+        serializer = self.get_serializer(app)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # ===============================================================
-# ✅ STATUSNI O‘ZGARTIRISH
+# 🧾 STATUSNI O‘ZGARTIRISH (Tugatish / Rad etish)
 # ===============================================================
 class ChangeApplicationStatusView(generics.UpdateAPIView):
     queryset = Application.objects.all()
     serializer_class = CompletedApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        if getattr(self, 'swagger_fake_view', False):
-            return Application.objects.none()
-        return Application.objects.all()
 
     @swagger_auto_schema(
         operation_summary="🧾 Arizani 'Tugatilgan' yoki 'Rad etilgan' deb belgilash",
@@ -328,27 +246,18 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
             },
         ),
         responses={200: openapi.Response("Status o‘zgartirildi")},
-        tags=["Applications"],
+        tags=["applications"],
     )
     def patch(self, request, *args, **kwargs):
         app_id = kwargs.get("application_id")
-        app = Application.objects.filter(id=app_id).first()
-        if not app:
-            return Response({"detail": "Ariza topilmadi"}, status=404)
-
+        app = get_object_or_404(Application, id=app_id)
         new_status = request.data.get("status")
-        final_conclusion = request.data.get("final_conclusion", "")
         if new_status not in ["completed", "rejected"]:
-            return Response({"detail": "Status noto‘g‘ri qiymatga ega"}, status=400)
+            return Response({"detail": "Noto‘g‘ri status qiymati"}, status=400)
 
         app.status = new_status
-        app.final_conclusion = final_conclusion
+        app.final_conclusion = request.data.get("final_conclusion", "")
         app.updated_at = timezone.now()
         app.save(update_fields=["status", "final_conclusion", "updated_at"])
-
-        ApplicationHistory.objects.create(
-            application=app,
-            author=request.user,
-            comment=f"Ariza {new_status.upper()} deb belgilandi"
-        )
-        return Response({"success": True, "status": new_status})
+        ApplicationHistory.objects.create(application=app, author=request.user, comment=f"Ariza {new_status.upper()} deb belgilandi")
+        return Response({"success": True, "status": new_status}, status=200)
