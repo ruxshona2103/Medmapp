@@ -1,6 +1,6 @@
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Q, Count
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from rest_framework import viewsets, status, permissions,  mixins
+from rest_framework import viewsets, status, permissions, mixins
 from core.models import Stage
 from .models import Patient, PatientHistory, PatientDocument, Contract
 from .serializers import (
@@ -28,10 +28,11 @@ class PatientViewSet(viewsets.ModelViewSet):
     """
     🧾 **Bemorlar (TZ 3.1):**
     - GET /patients/ — Kanban uchun ro'yxat (search, stage_id, tag_id, page, per_page, patient_id)
-    - POST /patients/ — Yangi bemor yaratish (tarixga "Bemor profili yaratildi")
-    - GET /patients/{id}/ — Bemorning to'liq ma'lumotlari (tarix, hujjatlar bilan)
-    - PUT /patients/{id}/ — Ma'lumotlarni tahrirlash (har bir o'zgarish tarixga yoziladi)
-    - DELETE /patients/{id}/ — Soft delete (arxivlash)
+    - POST /patients/ — Yangi bemor yaratish
+    - GET /patients/{id}/ — Bemorning to‘liq ma’lumotlari
+    - PUT /patients/{id}/ — Ma’lumotlarni tahrirlash
+    - DELETE /patients/{id}/ — Soft delete
+    - GET /patients/statistics/ — Statistik ma’lumotlar (Jami, Faol, Yangi bemorlar)
     """
     permission_classes = [permissions.IsAuthenticated]
     queryset = Patient.objects.filter(is_archived=False).select_related("stage", "tag").order_by("-created_at")
@@ -54,7 +55,7 @@ class PatientViewSet(viewsets.ModelViewSet):
             openapi.Parameter("tag_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
                               description="Teg ID bo‘yicha filter"),
             openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Alohida bemor ID bo‘yicha filter (masalan: /patients/patients/?patient_id=12)"),
+                              description="Alohida bemor ID bo‘yicha filter"),
             openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
                               description="Sahifa raqami (pagination)"),
             openapi.Parameter("per_page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
@@ -84,7 +85,7 @@ class PatientViewSet(viewsets.ModelViewSet):
         if tag_id:
             qs = qs.filter(tag_id=tag_id)
 
-        # 🧍‍♂️ Patient ID bo‘yicha filter (yangi)
+        # 🧍‍♂️ Alohida bemor bo‘yicha filter
         patient_id = request.query_params.get("patient_id")
         if patient_id:
             qs = qs.filter(id=patient_id)
@@ -101,6 +102,48 @@ class PatientViewSet(viewsets.ModelViewSet):
             "page": page,
             "per_page": per_page,
             "results": serializer.data
+        })
+
+    # ===================== 📊 STATISTIKA (YANGI ENDPOINT) =====================
+    @swagger_auto_schema(
+        method="get",
+        operation_summary="📊 Bemorlar statistikasi",
+        operation_description=(
+            "Operator panel uchun jami, faol va yangi bemorlar sonini qaytaradi.\n\n"
+            "**Qaytadigan qiymatlar:**\n"
+            "- `total_patients`: Barcha bemorlar soni\n"
+            "- `active_patients`: Arxivlanmagan (faol) bemorlar soni\n"
+            "- `new_patients`: 'Yangi' bosqichdagi bemorlar soni"
+        ),
+        responses={
+            200: openapi.Response(
+                description="Statistika muvaffaqiyatli olindi",
+                examples={
+                    "application/json": {
+                        "total_patients": 20,
+                        "active_patients": 20,
+                        "new_patients": 5
+                    }
+                }
+            )
+        },
+        tags=["patients"],
+    )
+    @action(detail=False, methods=["get"], url_path="statistics")
+    def statistics(self, request):
+        """
+        Operator panel uchun statistik ma’lumotlar:
+        jami bemorlar, faol bemorlar, yangi bosqichdagilar.
+        """
+        total_patients = Patient.objects.count()
+        active_patients = Patient.objects.filter(is_archived=False).count()
+        new_stage = Stage.objects.filter(code_name="new").first()
+        new_patients = Patient.objects.filter(stage=new_stage, is_archived=False).count() if new_stage else 0
+
+        return Response({
+            "total_patients": total_patients,
+            "active_patients": active_patients,
+            "new_patients": new_patients,
         })
 
     # ===================== 🆕 YARATISH =====================
