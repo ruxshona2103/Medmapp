@@ -23,23 +23,27 @@ class CustomPagination(PageNumberPagination):
 
 
 # ===============================================================
-# 🏥 Klinikalar – full filter + pagination
+# 🏥 Klinikalar – filterlar, pagination, statistika
 # ===============================================================
 class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
     """
     🏥 Klinikalar API
     - Klinikalar ro‘yxati (search, city, speciality filter bilan)
-    - Pagination: page, per_page
+    - Pagination (page, per_page)
+    - Statistik ma'lumotlar: jami klinikalar, mutaxassislar soni, o‘rtacha reyting
     """
     queryset = Clinic.objects.all().order_by("name")
     serializer_class = ClinicSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     pagination_class = CustomPagination
 
+    # ===========================================================
+    # 🔍 Klinikalar ro‘yxati (filter + pagination)
+    # ===========================================================
     @swagger_auto_schema(
         operation_summary="🏥 Klinikalar ro‘yxatini olish (filter va pagination bilan)",
         operation_description=(
-            "Filtrlash va pagination parametrlari:\n"
+            "Filtrlash va pagination parametrlari:\n\n"
             "- `search`: Klinika nomi yoki manzili bo‘yicha qidirish\n"
             "- `city`: Shahar nomi bo‘yicha filter\n"
             "- `speciality`: Mutaxassislik nomi bo‘yicha filter\n"
@@ -100,8 +104,53 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
         return self.get_paginated_response(serializer.data) if page else Response(serializer.data)
 
     # ===========================================================
+    # 📊 Statistik ma'lumotlar (Jami klinikalar, mutaxassislar, reyting)
+    # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="📊 Klinikalar bo‘yicha umumiy statistika olish",
+        operation_description=(
+            "Platformadagi klinikalar soni, barcha mutaxassislar soni va o‘rtacha reytingni qaytaradi.\n\n"
+            "**Qaytadigan natija:**\n"
+            "- `total_clinics`: Jami klinikalar soni\n"
+            "- `total_specialists`: Platformadagi barcha shifokorlar soni\n"
+            "- `average_rating`: Klinikalar bo‘yicha o‘rtacha reyting (1 dan 5 gacha)"
+        ),
+        responses={
+            200: openapi.Response(
+                description="Statistik ma’lumotlar muvaffaqiyatli qaytarildi",
+                examples={
+                    "application/json": {
+                        "total_clinics": 5,
+                        "total_specialists": 250,
+                        "average_rating": 4.7
+                    }
+                }
+            ),
+        },
+        tags=["clinics"],
+    )
+    @action(detail=False, methods=["get"], url_path="statistics")
+    def statistics(self, request):
+        """
+        📈 Umumiy klinika statistikasi
+        """
+        total_clinics = Clinic.objects.count()
+        total_specialists = User.objects.filter(role="doctor").count()
+        average_rating = Clinic.objects.aggregate(avg=Avg("reviews__rating"))["avg"] or 0
+
+        return Response({
+            "total_clinics": total_clinics,
+            "total_specialists": total_specialists,
+            "average_rating": round(average_rating, 1),
+        })
+
+    # ===========================================================
     # 👨‍⚕️ Klinikadagi shifokorlar
     # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="👨‍⚕️ Klinikadagi shifokorlar ro‘yxatini olish",
+        tags=["clinics"],
+    )
     @action(detail=True, methods=["get"], url_path="doctors")
     def doctors(self, request, pk=None):
         doctors = User.objects.filter(role="doctor", doctor_clinic__clinic_id=pk)
@@ -112,6 +161,10 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
     # ===========================================================
     # 💬 Klinikadagi sharhlar
     # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="💬 Klinikaga yozilgan sharhlar ro‘yxatini olish",
+        tags=["clinics"],
+    )
     @action(detail=True, methods=["get"], url_path="reviews")
     def reviews(self, request, pk=None):
         reviews = Review.objects.filter(clinic_id=pk)
@@ -122,6 +175,10 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
     # ===========================================================
     # ⭐ Klinikaga oid umumiy reyting ma’lumotlari
     # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="⭐ Klinikaga oid umumiy reyting ma’lumotlarini olish",
+        tags=["clinics"],
+    )
     @action(detail=True, methods=["get"], url_path="summary")
     def summary(self, request, pk=None):
         reviews = Review.objects.filter(clinic_id=pk)
