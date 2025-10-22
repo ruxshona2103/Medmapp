@@ -10,14 +10,13 @@ class ClinicSerializer(serializers.ModelSerializer):
     rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
     rating_distribution = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()  # 🆕 Rasm URL preview uchun qo‘shildi
+    image = serializers.SerializerMethodField()  # Rasm URL preview uchun qo‘shildi
 
     class Meta:
         model = Clinic
         fields = [
-            "id", "name", "address", "phone", "description",
-            "image",  # 🆕 Swagger’da preview chiqadi
-            "rating", "rating_count", "rating_distribution",
+            "id", "name", "address", "phone", "specialties", "rating", "workingHours", "image",
+            "rating_count", "rating_distribution", "description"
         ]
 
     def get_image(self, obj):
@@ -42,29 +41,12 @@ class ClinicSerializer(serializers.ModelSerializer):
             dist[row["rating"]] = row["c"]
         return dist
 
-
-class DoctorSerializer(serializers.ModelSerializer):
-    clinic = serializers.SerializerMethodField()
-
-    class Meta:
-        model = User
-        fields = ["id", "first_name", "last_name", "phone_number", "clinic"]
-
-    def get_clinic(self, obj):
-        dc = getattr(obj, "doctor_clinic", None)
-        if not dc:
-            return None
-        # ⚙️ Contextni ham uzatamiz, rasm URL preview to‘g‘ri chiqishi uchun
-        return ClinicSerializer(dc.clinic, context=self.context).data
-
-
 class ReviewSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
-        fields = ["id", "author", "author_name", "clinic", "doctor",
-                  "rating", "text", "video", "created_at"]
+        fields = ["id", "author", "author_name", "clinic", "doctor", "rating", "text", "video", "created_at"]
         read_only_fields = ["author", "author_name", "created_at"]
 
     def get_author_name(self, obj):
@@ -79,3 +61,16 @@ class ReviewSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["author"] = self.context["request"].user
         return super().create(validated_data)
+
+class DoctorSerializer(serializers.ModelSerializer):
+    clinic = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ["id", "first_name", "last_name", "phone_number", "clinic"]
+
+    def get_clinic(self, obj):
+        dc = getattr(obj, "doctor_clinic", None)
+        if not dc:
+            return None
+        return ClinicSerializer(dc.clinic, context=self.context).data
