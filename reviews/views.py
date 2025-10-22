@@ -21,7 +21,6 @@ class CustomPagination(PageNumberPagination):
     page_size_query_param = "per_page"  # front orqali o‘zgartirish uchun
     max_page_size = 100
 
-
 # ===============================================================
 # 🏥 Klinikalar – filterlar, pagination, statistika
 # ===============================================================
@@ -100,8 +99,14 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
 
         # 📄 Pagination (page + per_page)
         page = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page or qs, many=True, context={"request": request})
-        return self.get_paginated_response(serializer.data) if page else Response(serializer.data)
+        if page is not None:
+            # If pagination is applied, return paginated response
+            serializer = self.get_serializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(serializer.data)
+        else:
+            # If no pagination, return the full array of results
+            serializer = self.get_serializer(qs, many=True, context={"request": request})
+            return Response(serializer.data)
 
     # ===========================================================
     # 📊 Statistik ma'lumotlar (Jami klinikalar, mutaxassislar, reyting)
