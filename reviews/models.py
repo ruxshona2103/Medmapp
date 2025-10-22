@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
-User = settings.AUTH_USER_MODEL  # authentication.CustomUser
+User = settings.AUTH_USER_MODEL
 
 
 class Clinic(models.Model):
@@ -10,15 +10,20 @@ class Clinic(models.Model):
     address = models.CharField(max_length=255, blank=True)
     phone = models.CharField(max_length=64, blank=True)
     description = models.TextField(blank=True)
+    specialties = models.CharField(max_length=255, blank=True)  # Mutaxassisliklar
+    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0)  # Reyting (1-5 gacha)
+    workingHours = models.CharField(max_length=255, blank=True)  # Ish vaqti
+    image = models.ImageField(upload_to="clinics/images/", blank=True, null=True)  # Rasm
 
     def __str__(self):
         return self.name
 
+    def review_video_upload_to(instance, filename):
+        # Upload qilish yo'lini aniqlash
+        return f"reviews/videos/{instance.id or 'tmp'}/{filename}"
+
 
 class DoctorClinic(models.Model):
-    """
-    Doctor -> Clinic bog'lanishi (CustomUser modelini o'zgartirmasdan).
-    """
     doctor = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -33,30 +38,13 @@ class DoctorClinic(models.Model):
     def __str__(self):
         return f"{self.doctor} → {self.clinic}"
 
-
-def review_video_upload_to(instance, filename):
-    return f"reviews/videos/{instance.id or 'tmp'}/{filename}"
-
-
 class Review(models.Model):
-    """
-    Review klinikaga yoki doktorga yoziladi (kamida bittasi).
-    Author — odatda ROLE_USER (bemor).
-    """
-    author = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="written_reviews",
-    )
-    clinic = models.ForeignKey(
-        Clinic, on_delete=models.CASCADE, related_name="reviews",
-        null=True, blank=True
-    )
-    doctor = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="doctor_reviews",
-        null=True, blank=True, limit_choices_to={"role": "doctor"}
-    )
-    rating = models.PositiveSmallIntegerField()   # 1..5
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="written_reviews")
+    clinic = models.ForeignKey(Clinic, on_delete=models.CASCADE, related_name="reviews", null=True, blank=True)
+    doctor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="doctor_reviews", null=True, blank=True, limit_choices_to={"role": "doctor"})
+    rating = models.PositiveSmallIntegerField()  # 1..5
     text = models.TextField(blank=True)
-    video = models.FileField(upload_to=review_video_upload_to, null=True, blank=True)
+    video = models.FileField(upload_to="reviews/videos/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
