@@ -5,7 +5,6 @@ from .models import Clinic, DoctorClinic, Review
 
 User = get_user_model()
 
-
 class ClinicSerializer(serializers.ModelSerializer):
     rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()

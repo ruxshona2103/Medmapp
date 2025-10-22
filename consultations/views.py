@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework.status import HTTP_403_FORBIDDEN, HTTP_400_BAD_REQUEST
 
 from .models import (
     Conversation,
@@ -836,7 +837,7 @@ class MessageViewSet(
                 logger.warning(f"User {request.user.id} attempted to mark own message {pk} as read")
                 return Response(
                     {"detail": "Cannot mark your own message as read"},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=HTTP_400_BAD_REQUEST,
                 )
 
             if not message.conversation.participants.filter(user=request.user).exists():
@@ -845,7 +846,7 @@ class MessageViewSet(
                 )
                 return Response(
                     {"detail": "You are not a participant in this conversation"},
-                    status=status.HTTP_403_FORBIDDEN,
+                    status=HTTP_403_FORBIDDEN,
                 )
 
             status, created = MessageReadStatus.objects.get_or_create(

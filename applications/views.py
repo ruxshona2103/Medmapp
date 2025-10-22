@@ -1,6 +1,3 @@
-# ===============================================================
-# 🩺 APPLICATIONS MODULE (Tozalangan professional versiya)
-# ===============================================================
 from django.db import models
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, viewsets, status, permissions
@@ -8,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import PageNumberPagination  # Pagination importi
 from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -20,7 +18,6 @@ from .serializers import (
 )
 from patients.models import Patient
 from core.models import Stage
-
 
 # ===============================================================
 # 🩺 APPLICATIONS – Yangi va jarayondagi murojaatlar
@@ -135,7 +132,6 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         ApplicationHistory.objects.create(application=application, author=request.user, comment="📄 Hujjat yuklandi")
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-
 # ===============================================================
 # 🔁 BOSQICHNI O‘ZGARTIRISH
 # ===============================================================
@@ -168,16 +164,21 @@ class ChangeApplicationStageView(APIView):
         ApplicationHistory.objects.create(application=app, author=request.user, comment=comment)
         return Response({"success": True, "new_stage": new_stage.title})
 
-
 # ===============================================================
 # ✅ OPERATOR PANELI – BAJARILGAN MUROJAATLAR
 # ===============================================================
+class CompletedApplicationPagination(PageNumberPagination):
+    page_size = 10  # Bir sahifada qancha natija ko'rsatilishini belgilash
+    page_size_query_param = 'page_size'
+    max_page_size = 100  # Maksimal sahifa o'lchami
+
 class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     🧾 Tugatilgan yoki rad etilgan murojaatlar (Operator uchun)
     """
     serializer_class = CompletedApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = CompletedApplicationPagination
 
     def get_queryset(self):
         qs = Application.objects.filter(

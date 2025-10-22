@@ -4,7 +4,6 @@ from django.db import models
 
 User = settings.AUTH_USER_MODEL
 
-
 class Clinic(models.Model):
     name = models.CharField(max_length=255, unique=True)
     address = models.CharField(max_length=255, blank=True)
@@ -21,7 +20,6 @@ class Clinic(models.Model):
     def review_video_upload_to(instance, filename):
         # Upload qilish yo'lini aniqlash
         return f"reviews/videos/{instance.id or 'tmp'}/{filename}"
-
 
 class DoctorClinic(models.Model):
     doctor = models.OneToOneField(

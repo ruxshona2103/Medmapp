@@ -12,7 +12,6 @@ from .serializers import ClinicSerializer, DoctorSerializer, ReviewSerializer
 
 User = get_user_model()
 
-
 # ===============================================================
 # 📄 Dinamik pagination class (per_page qo‘llab-quvvatlaydi)
 # ===============================================================
@@ -27,7 +26,7 @@ class CustomPagination(PageNumberPagination):
 class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
     """
     🏥 Klinikalar API
-    - Klinikalar ro‘yxati (search, city, speciality filter bilan)
+    - Klinikalar ro‘yxati (address, working hours, speciality filter bilan)
     - Pagination (page, per_page)
     - Statistik ma'lumotlar: jami klinikalar, mutaxassislar soni, o‘rtacha reyting
     """
@@ -44,32 +43,21 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
         operation_description=(
             "Filtrlash va pagination parametrlari:\n\n"
             "- `search`: Klinika nomi yoki manzili bo‘yicha qidirish\n"
-            "- `city`: Shahar nomi bo‘yicha filter\n"
-            "- `speciality`: Mutaxassislik nomi bo‘yicha filter\n"
+            "- `address`: Manzil bo‘yicha filter (masalan: Tashkent)\n"
+            "- `speciality`: Mutaxassislik bo‘yicha filter (masalan: Kardiologiya)\n"
+            "- `working_hours_from`: Ish soatining boshlanish vaqti (masalan: 09:00)\n"
+            "- `working_hours_to`: Ish soatining tugash vaqti (masalan: 18:00)\n"
             "- `page`: Sahifa raqami (default: 1)\n"
             "- `per_page`: Har bir sahifadagi elementlar soni (default: 10)"
         ),
         manual_parameters=[
-            openapi.Parameter(
-                "search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                description="Klinika nomi yoki manzili bo‘yicha qidirish"
-            ),
-            openapi.Parameter(
-                "city", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                description="Shahar nomi bo‘yicha filter (masalan: Tashkent)"
-            ),
-            openapi.Parameter(
-                "speciality", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                description="Mutaxassislik bo‘yicha filter (masalan: Kardiologiya)"
-            ),
-            openapi.Parameter(
-                "page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                description="Sahifa raqami (pagination)"
-            ),
-            openapi.Parameter(
-                "per_page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                description="Sahifadagi elementlar soni (pagination)"
-            ),
+            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Klinika nomi yoki manzili bo‘yicha qidirish"),
+            openapi.Parameter("address", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Manzil bo‘yicha filter (masalan: Tashkent)"),
+            openapi.Parameter("speciality", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Mutaxassislik bo‘yicha filter (masalan: Kardiologiya)"),
+            openapi.Parameter("working_hours_from", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Ish soatining boshlanish vaqti (masalan: 09:00)"),
+            openapi.Parameter("working_hours_to", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Ish soatining tugash vaqti (masalan: 18:00)"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa raqami (pagination)"),
+            openapi.Parameter("per_page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifadagi elementlar soni (pagination)"),
         ],
         responses={200: ClinicSerializer(many=True)},
         tags=["clinics"],
@@ -82,10 +70,10 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
         if search:
             qs = qs.filter(Q(name__icontains=search) | Q(address__icontains=search))
 
-        # 🏙️ Shahar bo‘yicha filter
-        city = request.query_params.get("city")
-        if city:
-            qs = qs.filter(address__icontains=city)
+        # 🏙️ Manzil bo‘yicha filter
+        address = request.query_params.get("address")
+        if address:
+            qs = qs.filter(address__icontains=address)
 
         # ⚕️ Mutaxassislik bo‘yicha filter
         speciality = request.query_params.get("speciality")
@@ -93,18 +81,22 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
             clinic_ids = User.objects.filter(
                 role="doctor",
                 doctor_clinic__clinic__isnull=False,
-                speciality__icontains=speciality,
+                specialties__icontains=speciality,
             ).values_list("doctor_clinic__clinic_id", flat=True)
             qs = qs.filter(id__in=clinic_ids)
+
+        # ⏰ Ish vaqti (from-to) filtrini qo'shish
+        working_hours_from = request.query_params.get("working_hours_from")
+        working_hours_to = request.query_params.get("working_hours_to")
+        if working_hours_from and working_hours_to:
+            qs = qs.filter(workingHours__gte=working_hours_from, workingHours__lte=working_hours_to)
 
         # 📄 Pagination (page + per_page)
         page = self.paginate_queryset(qs)
         if page is not None:
-            # If pagination is applied, return paginated response
             serializer = self.get_serializer(page, many=True, context={"request": request})
             return self.get_paginated_response(serializer.data)
         else:
-            # If no pagination, return the full array of results
             serializer = self.get_serializer(qs, many=True, context={"request": request})
             return Response(serializer.data)
 
@@ -123,26 +115,16 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
         responses={
             200: openapi.Response(
                 description="Statistik ma’lumotlar muvaffaqiyatli qaytarildi",
-                examples={
-                    "application/json": {
-                        "total_clinics": 5,
-                        "total_specialists": 250,
-                        "average_rating": 4.7
-                    }
-                }
+                examples={"application/json": {"total_clinics": 5, "total_specialists": 250, "average_rating": 4.7}},
             ),
         },
         tags=["clinics"],
     )
     @action(detail=False, methods=["get"], url_path="statistics")
     def statistics(self, request):
-        """
-        📈 Umumiy klinika statistikasi
-        """
         total_clinics = Clinic.objects.count()
         total_specialists = User.objects.filter(role="doctor").count()
         average_rating = Clinic.objects.aggregate(avg=Avg("reviews__rating"))["avg"] or 0
-
         return Response({
             "total_clinics": total_clinics,
             "total_specialists": total_specialists,
