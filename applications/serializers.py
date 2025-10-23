@@ -115,6 +115,47 @@ class PatientMinimalSerializer(serializers.ModelSerializer):
 
 
 # ===============================================================
+# 🔹 PATIENT DETAIL SERIALIZER (to'liq ma'lumotlar)
+# ===============================================================
+class PatientDetailSerializer(serializers.ModelSerializer):
+    """Bemor to'liq ma'lumotlari - applications va documents bilan"""
+    applications = serializers.SerializerMethodField()
+    total_applications = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Patient
+        fields = [
+            'id',
+            'full_name',
+            'phone_number',
+            'date_of_birth',
+            'gender',
+            'email',
+            'avatar',
+            'complaints',
+            'previous_diagnosis',
+            'applications',
+            'total_applications',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_applications(self, obj):
+        """Bemorning arizalari - documents bilan"""
+        applications = Application.objects.filter(
+            patient=obj,
+            is_archived=False
+        ).select_related('stage').prefetch_related('documents', 'applicationhistory_set').order_by('-created_at')
+
+        # ApplicationSerializer'dan foydalanish
+        return ApplicationSerializer(applications, many=True, context=self.context).data
+
+    def get_total_applications(self, obj):
+        """Jami arizalar soni"""
+        return Application.objects.filter(patient=obj, is_archived=False).count()
+
+
+# ===============================================================
 # 🔹 STAGE SERIALIZER (minimal)
 # ===============================================================
 class StageMinimalSerializer(serializers.ModelSerializer):
@@ -197,18 +238,29 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
     patient_id = serializers.IntegerField(write_only=True, required=True)
     stage_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
+    # ✅ Qo'shimcha - response'da ko'rsatish uchun
+    patient = PatientMinimalSerializer(read_only=True)
+    stage = StageMinimalSerializer(read_only=True)
+
     class Meta:
         model = Application
         fields = [
+            'id',
+            'application_id',
             'patient_id',
+            'patient',
             'clinic_name',
             'complaint',
             'diagnosis',
             'final_conclusion',
             'stage_id',
+            'stage',
             'status',
             'comment',
+            'created_at',
+            'updated_at',
         ]
+        read_only_fields = ['id', 'application_id', 'patient', 'stage', 'created_at', 'updated_at']
 
     def validate_patient_id(self, value):
         """Bemor mavjudligini tekshirish"""
@@ -283,10 +335,6 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
             )
 
         return instance
-
-    def to_representation(self, instance):
-        """Response formatini o'zgartirish"""
-        return ApplicationSerializer(instance, context=self.context).data
 
 
 # ===============================================================

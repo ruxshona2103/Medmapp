@@ -1,363 +1,705 @@
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from django.db.models import Q, Count
+from rest_framework import viewsets, status, permissions, generics
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from rest_framework import viewsets, status, permissions, mixins
-from core.models import Stage
-from .models import Patient, PatientHistory, PatientDocument, Contract
+from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
 from .serializers import (
     PatientListSerializer,
     PatientDetailSerializer,
     PatientCreateUpdateSerializer,
-    PatientDocumentSerializer,
     PatientProfileSerializer,
+    PatientDocumentSerializer,
+    PatientHistorySerializer,
+    ChatMessageSerializer,
 )
-from .utils import get_default_stage
 
 
 # ===============================================================
-# 🧩 3.1 — BEMORLAR CRUD
+# 📄 PAGINATION
+# ===============================================================
+class PatientPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+# ===============================================================
+# 👤 PATIENT VIEWSET
 # ===============================================================
 class PatientViewSet(viewsets.ModelViewSet):
     """
-    🧾 **Bemorlar (TZ 3.1):**
-    - GET /patients/ — Kanban uchun ro'yxat (search, stage_id, tag_id, page, per_page, patient_id)
-    - POST /patients/ — Yangi bemor yaratish
-    - GET /patients/{id}/ — Bemorning to‘liq ma’lumotlari
-    - PUT /patients/{id}/ — Ma’lumotlarni tahrirlash
-    - DELETE /patients/{id}/ — Soft delete
-    - GET /patients/statistics/ — Statistik ma’lumotlar (Jami, Faol, Yangi bemorlar)
+    👤 Bemorlar API
+    - List: Barcha bemorlar (Kanban board uchun minimal ma'lumotlar)
+    - Retrieve: Bitta bemor (to'liq ma'lumotlar - applications, documents, history)
+    - Create: Yangi bemor yaratish
+    - Update: Bemor ma'lumotlarini yangilash
+    - Delete: Bemorni o'chirish
     """
+    queryset = Patient.objects.all().select_related('stage', 'tag').order_by('-created_at')
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Patient.objects.filter(is_archived=False).select_related("stage", "tag").order_by("-created_at")
+    pagination_class = PatientPagination
 
     def get_serializer_class(self):
-        if self.action == "list":
-            return PatientListSerializer
-        if self.action == "retrieve":
+        """Har xil action uchun mos serializer"""
+        if self.action == 'retrieve':
             return PatientDetailSerializer
-        return PatientCreateUpdateSerializer
+        elif self.action in ['create', 'update', 'partial_update']:
+            return PatientCreateUpdateSerializer
+        elif self.action == 'profile':
+            return PatientProfileSerializer
+        return PatientListSerializer
 
-    # ===================== 📋 RO‘YXAT (LIST) =====================
+    def get_serializer_context(self):
+        """Context - file URL'lar uchun request kerak"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    def get_queryset(self):
+        """Queryset - filter va search bilan"""
+        queryset = Patient.objects.all().select_related('stage', 'tag')
+
+        # 🔍 Qidiruv (ism, telefon, email)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(full_name__icontains=search) |
+                Q(phone_number__icontains=search) |
+                Q(email__icontains=search)
+            )
+
+        # 🏷️ Stage bo'yicha filter (Kanban columns uchun)
+        stage_id = self.request.query_params.get('stage_id')
+        if stage_id:
+            queryset = queryset.filter(stage_id=stage_id)
+
+        # 🏷️ Tag bo'yicha filter
+        tag_id = self.request.query_params.get('tag_id')
+        if tag_id:
+            queryset = queryset.filter(tag_id=tag_id)
+
+        # 📅 Sana bo'yicha filter
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+
+        return queryset.order_by('-created_at')
+
     @swagger_auto_schema(
-        operation_description="Barcha bemorlar ro'yxati (Kanban). Filtrlar: search, stage_id, tag_id, patient_id, page, per_page.",
+        operation_summary="👤 Barcha bemorlar ro'yxati (Kanban board uchun)",
+        operation_description="Bemorlar ro'yxati - minimal ma'lumotlar (id, ism, telefon, stage_id, tag_id). Kanban board uchun optimizatsiya qilingan.",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Ism / telefon / email bo‘yicha qidirish"),
-            openapi.Parameter("stage_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Bosqich ID bo‘yicha filter"),
-            openapi.Parameter("tag_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Teg ID bo‘yicha filter"),
-            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Alohida bemor ID bo‘yicha filter"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifa raqami (pagination)"),
-            openapi.Parameter("per_page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifadagi elementlar soni (pagination)"),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Ism, telefon yoki email bo'yicha qidirish"),
+            openapi.Parameter('stage_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Stage bo'yicha filter (Kanban column)"),
+            openapi.Parameter('tag_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Tag bo'yicha filter"),
+            openapi.Parameter('date_from', openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Yaratilgan sana (dan) - format: YYYY-MM-DD"),
+            openapi.Parameter('date_to', openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Yaratilgan sana (gacha) - format: YYYY-MM-DD"),
+            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifa raqami"),
+            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifadagi elementlar soni (max 100)"),
         ],
         responses={200: PatientListSerializer(many=True)},
+        tags=["patients"]
     )
     def list(self, request, *args, **kwargs):
-        qs = self.get_queryset()
+        """Bemorlar ro'yxati - Kanban board uchun"""
+        queryset = self.filter_queryset(self.get_queryset())
 
-        # 🔍 Qidiruv
-        search = request.query_params.get("search")
-        if search:
-            qs = qs.filter(
-                Q(full_name__icontains=search)
-                | Q(phone_number__icontains=search)
-                | Q(email__icontains=search)
-            )
+        # Pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
-        # 🧩 Bosqich bo‘yicha filter
-        stage_id = request.query_params.get("stage_id")
-        if stage_id:
-            qs = qs.filter(stage_id=stage_id)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-        # 🏷 Teg bo‘yicha filter
-        tag_id = request.query_params.get("tag_id")
-        if tag_id:
-            qs = qs.filter(tag_id=tag_id)
-
-        # 🧍‍♂️ Alohida bemor bo‘yicha filter
-        patient_id = request.query_params.get("patient_id")
-        if patient_id:
-            qs = qs.filter(id=patient_id)
-
-        # 🔢 Oddiy pagination
-        page = int(request.query_params.get("page", 1))
-        per_page = int(request.query_params.get("per_page", 20))
-        start = (page - 1) * per_page
-        end = start + per_page
-
-        serializer = PatientListSerializer(qs[start:end], many=True, context={"request": request})
-        return Response({
-            "count": qs.count(),
-            "page": page,
-            "per_page": per_page,
-            "results": serializer.data
-        })
-
-    # ===================== 📊 STATISTIKA (YANGI ENDPOINT) =====================
     @swagger_auto_schema(
-        method="get",
-        operation_summary="📊 Bemorlar statistikasi",
-        operation_description=(
-            "Operator panel uchun jami, faol va yangi bemorlar sonini qaytaradi.\n\n"
-            "**Qaytadigan qiymatlar:**\n"
-            "- `total_patients`: Barcha bemorlar soni\n"
-            "- `active_patients`: Arxivlanmagan (faol) bemorlar soni\n"
-            "- `new_patients`: 'Yangi' bosqichdagi bemorlar soni"
-        ),
-        responses={
-            200: openapi.Response(
-                description="Statistika muvaffaqiyatli olindi",
-                examples={
-                    "application/json": {
-                        "total_patients": 20,
-                        "active_patients": 20,
-                        "new_patients": 5
-                    }
-                }
-            )
-        },
-        tags=["patients"],
-    )
-    @action(detail=False, methods=["get"], url_path="statistics")
-    def statistics(self, request):
-        """
-        Operator panel uchun statistik ma’lumotlar:
-        jami bemorlar, faol bemorlar, yangi bosqichdagilar.
-        """
-        total_patients = Patient.objects.count()
-        active_patients = Patient.objects.filter(is_archived=False).count()
-        new_stage = Stage.objects.filter(code_name="new").first()
-        new_patients = Patient.objects.filter(stage=new_stage, is_archived=False).count() if new_stage else 0
-
-        return Response({
-            "total_patients": total_patients,
-            "active_patients": active_patients,
-            "new_patients": new_patients,
-        })
-
-    # ===================== 🆕 YARATISH =====================
-    @swagger_auto_schema(
-        operation_description="Yangi bemor yaratish. Tarixga 'Bemor profili yaratildi' yoziladi. Stage/tag kelmasa — default qo‘yiladi.",
-        request_body=PatientCreateUpdateSerializer,
-        responses={201: PatientDetailSerializer},
-    )
-    def create(self, request, *args, **kwargs):
-        serializer = PatientCreateUpdateSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        payload = {**serializer.validated_data}
-
-        if not payload.get("stage"):
-            payload["stage"] = get_default_stage()
-
-        patient = Patient.objects.create(created_by=request.user, **payload)
-        PatientHistory.objects.create(patient=patient, author=request.user, comment="Bemor profili yaratildi")
-
-        return Response(
-            PatientDetailSerializer(patient, context={"request": request}).data,
-            status=status.HTTP_201_CREATED
-        )
-
-    # ===================== 📄 KO‘RISH (BIRTA) =====================
-    @swagger_auto_schema(
-        operation_description="Bitta bemorning to‘liq ma'lumotlari (tarix va hujjatlar bilan).",
-        responses={200: PatientDetailSerializer},
+        operation_summary="👤 Bemor to'liq ma'lumotlari",
+        operation_description="Bemorning barcha ma'lumotlari: shaxsiy ma'lumotlar, arizalar (applications), hujjatlar (documents), tarix (history)",
+        responses={200: PatientDetailSerializer()},
+        tags=["patients"]
     )
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        return Response(PatientDetailSerializer(instance, context={"request": request}).data)
+        """Bitta bemor - to'liq ma'lumotlar (applications, documents, history)"""
+        patient = self.get_object()
+        serializer = self.get_serializer(patient)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # ===================== ✏️ TAHRIRLASH =====================
     @swagger_auto_schema(
-        operation_description="Bemor ma'lumotlarini yangilash. Har bir o‘zgarish PatientHistoryga yoziladi.",
+        operation_summary="👤 Yangi bemor yaratish",
+        operation_description="Yangi bemor qo'shish. Avatar yuklash mumkin.",
         request_body=PatientCreateUpdateSerializer,
-        responses={200: PatientDetailSerializer},
+        responses={201: PatientCreateUpdateSerializer()},
+        tags=["patients"]
     )
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = PatientCreateUpdateSerializer(instance, data=request.data, context={"request": request})
+    def create(self, request, *args, **kwargs):
+        """Yangi bemor yaratish"""
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         patient = serializer.save()
-        PatientHistory.objects.create(patient=patient, author=request.user, comment="Bemor ma'lumotlari yangilandi")
-        return Response(PatientDetailSerializer(patient, context={"request": request}).data)
 
-    # ===================== 🗑 ARXIVLASH (SOFT DELETE) =====================
-    @swagger_auto_schema(operation_description="Bemorni arxivlash (soft delete).")
-    def destroy(self, request, *args, **kwargs):
-        patient = self.get_object()
-        patient.is_archived = True
-        patient.archived_at = timezone.now()
-        patient.save(update_fields=["is_archived", "archived_at"])
-        PatientHistory.objects.create(patient=patient, author=request.user, comment="Bemor arxivlandi (soft delete)")
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    # ===================== 🔁 BOSQICHNI O‘ZGARTIRISH =====================
-    @swagger_auto_schema(
-        method="patch",
-        operation_description="Bemorning bosqichini o‘zgartirish.",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=["new_stage_id"],
-            properties={
-                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi bosqich IDsi"),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh (ixtiyoriy)"),
-            },
-        ),
-        responses={200: openapi.Response("success: true")},
-    )
-    @action(detail=True, methods=["patch"], url_path="change-stage")
-    def change_stage(self, request, pk=None):
-        patient = self.get_object()
-        new_stage_id = request.data.get("new_stage_id")
-        comment = request.data.get("comment", "")
-        stage = get_object_or_404(Stage, pk=new_stage_id)
-        patient.stage = stage
-        patient.save(update_fields=["stage", "updated_at"])
+        # History yozish
         PatientHistory.objects.create(
             patient=patient,
             author=request.user,
-            comment=comment or f"Bosqich '{stage.title}' ga o‘zgartirildi",
+            comment=f"📝 Bemor ro'yxatga olindi: {patient.full_name}"
         )
-        return Response({"success": True})
 
-# ===============================================================
-# 🧩 3.4 — HUJJATLAR
-# ===============================================================
-class PatientDocumentViewSet(mixins.CreateModelMixin,
-                             mixins.DestroyModelMixin,
-                             viewsets.GenericViewSet):
-    permission_classes = [IsAuthenticated]
-    queryset = PatientDocument.objects.all()
-    serializer_class = PatientDocumentSerializer
-    parser_classes = (MultiPartParser, FormParser)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @swagger_auto_schema(
-        operation_summary="Muayyan bemorga yangi hujjat yuklash",
-        consumes=['multipart/form-data'],
-        manual_parameters=[
-            openapi.Parameter("patient_pk", openapi.IN_PATH, description="Bemor ID raqami", type=openapi.TYPE_INTEGER, required=True),
-            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, description="Fayl yuklash (PDF, JPG, PNG va h.k.)", required=True),
-            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING, description="Fayl tavsifi (ixtiyoriy)"),
-            openapi.Parameter("source_type", openapi.IN_FORM, type=openapi.TYPE_STRING,
-                              enum=["operator", "patient", "partner"],
-                              description="Kim tomonidan yuklandi", required=True),
-        ],
-        responses={201: PatientDocumentSerializer}
+        operation_summary="👤 Bemor ma'lumotlarini yangilash (PUT)",
+        operation_description="Bemorning barcha ma'lumotlarini yangilash",
+        request_body=PatientCreateUpdateSerializer,
+        responses={200: PatientCreateUpdateSerializer()},
+        tags=["patients"]
     )
-    def create(self, request, *args, **kwargs):
-        patient_pk = kwargs.get("patient_pk")
+    def update(self, request, *args, **kwargs):
+        """Bemorni yangilash (PUT)"""
+        patient = self.get_object()
+        serializer = self.get_serializer(patient, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # History yozish
+        PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment="🔄 Bemor ma'lumotlari yangilandi"
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="👤 Bemor ma'lumotlarini qisman yangilash (PATCH)",
+        operation_description="Bemorning ayrim maydonlarini o'zgartirish",
+        request_body=PatientCreateUpdateSerializer,
+        responses={200: PatientCreateUpdateSerializer()},
+        tags=["patients"]
+    )
+    def partial_update(self, request, *args, **kwargs):
+        """Bemorni qisman yangilash (PATCH)"""
+        patient = self.get_object()
+        serializer = self.get_serializer(patient, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # History yozish
+        PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment="✏️ Bemor ma'lumotlari qisman yangilandi"
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="👤 Bemorni o'chirish",
+        operation_description="Bemorni tizimdan o'chirish",
+        responses={204: "Bemor muvaffaqiyatli o'chirildi"},
+        tags=["patients"]
+    )
+    def destroy(self, request, *args, **kwargs):
+        """Bemorni o'chirish"""
+        patient = self.get_object()
+        patient_name = patient.full_name
+        patient.delete()
+        return Response(
+            {"detail": f"Bemor '{patient_name}' muvaffaqiyatli o'chirildi"},
+            status=status.HTTP_204_NO_CONTENT
+        )
+
+    # ===========================================================
+    # 🕓 BEMOR TARIXI
+    # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="🕓 Bemor tarixi",
+        operation_description="Bemorning barcha o'zgarishlar tarixi",
+        responses={200: PatientHistorySerializer(many=True)},
+        tags=["patients"]
+    )
+    @action(detail=True, methods=['get'], url_path='history')
+    def history(self, request, pk=None):
+        """Bemor tarixi"""
+        patient = self.get_object()
+        history = PatientHistory.objects.filter(patient=patient).select_related('author').order_by('-created_at')
+        serializer = PatientHistorySerializer(history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="🕓 Bemorga izoh qo'shish",
+        operation_description="Bemor tarixiga yangi izoh yozish",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['comment'],
+            properties={
+                'comment': openapi.Schema(type=openapi.TYPE_STRING, description="Izoh matni"),
+            }
+        ),
+        responses={201: PatientHistorySerializer()},
+        tags=["patients"]
+    )
+    @action(detail=True, methods=['post'], url_path='history/add')
+    def add_history(self, request, pk=None):
+        """Bemorga izoh qo'shish"""
+        patient = self.get_object()
+        comment = request.data.get('comment')
+
+        if not comment:
+            return Response(
+                {"detail": "Izoh matni kiritilmagan"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        history = PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment=comment
+        )
+
+        serializer = PatientHistorySerializer(history)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    # ===========================================================
+    # 🏷️ STAGE VA TAG O'ZGARTIRISH
+    # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="🏷️ Bemorning stage'ini o'zgartirish",
+        operation_description="Bemorni boshqa stage'ga ko'chirish (Kanban board uchun)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['stage_id'],
+            properties={
+                'stage_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi stage ID"),
+                'comment': openapi.Schema(type=openapi.TYPE_STRING, description="Izoh (ixtiyoriy)"),
+            }
+        ),
+        responses={200: openapi.Response("Stage muvaffaqiyatli o'zgartirildi")},
+        tags=["patients"]
+    )
+    @action(detail=True, methods=['patch'], url_path='change-stage')
+    def change_stage(self, request, pk=None):
+        """Bemorning stage'ini o'zgartirish"""
+        from core.models import Stage
+
+        patient = self.get_object()
+        stage_id = request.data.get('stage_id')
+        comment = request.data.get('comment', '')
+
+        if not stage_id:
+            return Response(
+                {"detail": "stage_id kiritilmagan"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            new_stage = Stage.objects.get(id=stage_id)
+        except Stage.DoesNotExist:
+            return Response(
+                {"detail": "Stage topilmadi"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        old_stage = patient.stage.title if patient.stage else "Yo'q"
+        patient.stage = new_stage
+        patient.save(update_fields=['stage'])
+
+        # History yozish
+        history_comment = comment or f"Stage '{old_stage}' → '{new_stage.title}' ga o'zgartirildi"
+        PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment=history_comment
+        )
+
+        return Response({
+            "success": True,
+            "new_stage": {
+                "id": new_stage.id,
+                "title": new_stage.title,
+                "order": new_stage.order
+            }
+        }, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="🏷️ Bemorning tag'ini o'zgartirish",
+        operation_description="Bemorga tag qo'shish yoki o'zgartirish",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'tag_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="Tag ID (null = tag o'chirish)"),
+            }
+        ),
+        responses={200: openapi.Response("Tag muvaffaqiyatli o'zgartirildi")},
+        tags=["patients"]
+    )
+    @action(detail=True, methods=['patch'], url_path='change-tag')
+    def change_tag(self, request, pk=None):
+        """Bemorning tag'ini o'zgartirish"""
+        from core.models import Tag
+
+        patient = self.get_object()
+        tag_id = request.data.get('tag_id')
+
+        if tag_id:
+            try:
+                new_tag = Tag.objects.get(id=tag_id)
+                patient.tag = new_tag
+                patient.save(update_fields=['tag'])
+
+                # History yozish
+                PatientHistory.objects.create(
+                    patient=patient,
+                    author=request.user,
+                    comment=f"Tag '{new_tag.name}' qo'shildi"
+                )
+
+                return Response({
+                    "success": True,
+                    "new_tag": {
+                        "id": new_tag.id,
+                        "name": new_tag.name
+                    }
+                }, status=status.HTTP_200_OK)
+            except Tag.DoesNotExist:
+                return Response(
+                    {"detail": "Tag topilmadi"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            # Tag o'chirish
+            patient.tag = None
+            patient.save(update_fields=['tag'])
+
+            PatientHistory.objects.create(
+                patient=patient,
+                author=request.user,
+                comment="Tag o'chirildi"
+            )
+
+            return Response({
+                "success": True,
+                "new_tag": None
+            }, status=status.HTTP_200_OK)
+
+    # ===========================================================
+    # 👤 PROFIL (Frontend uchun)
+    # ===========================================================
+    @swagger_auto_schema(
+        operation_summary="👤 Bemor profili",
+        operation_description="Bemorning profil ma'lumotlari (frontend profil sozlamalari uchun)",
+        responses={200: PatientProfileSerializer()},
+        tags=["patients"]
+    )
+    @action(detail=True, methods=['get'], url_path='profile')
+    def profile(self, request, pk=None):
+        """Bemor profili - frontend uchun"""
+        patient = self.get_object()
+        serializer = PatientProfileSerializer(patient, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ===============================================================
+# 📎 PATIENT DOCUMENT VIEWSET
+# ===============================================================
+class PatientDocumentViewSet(viewsets.ModelViewSet):
+    """
+    📎 Bemor hujjatlari API
+    - List: Bemorning barcha hujjatlari
+    - Create: Yangi hujjat yuklash
+    - Retrieve: Bitta hujjat
+    - Delete: Hujjatni o'chirish
+    """
+    serializer_class = PatientDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        """Patient ID bo'yicha filter"""
+        patient_id = self.kwargs.get('patient_pk')
+        if patient_id:
+            return PatientDocument.objects.filter(patient_id=patient_id).order_by('-uploaded_at')
+        return PatientDocument.objects.all().order_by('-uploaded_at')
+
+    def get_serializer_context(self):
+        """Context qo'shish"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    @swagger_auto_schema(
+        operation_summary="📎 Bemor hujjatlari ro'yxati",
+        operation_description="Bemorning barcha yuklangan hujjatlari",
+        responses={200: PatientDocumentSerializer(many=True)},
+        tags=["patient-documents"]
+    )
+    def list(self, request, patient_pk=None):
+        """Bemor hujjatlari ro'yxati"""
+        documents = self.get_queryset()
+        serializer = self.get_serializer(documents, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="📎 Hujjat yuklash",
+        operation_description="Bemor uchun yangi hujjat yuklash (PDF, JPG, PNG, DOCX)",
+        request_body=PatientDocumentSerializer,
+        responses={201: PatientDocumentSerializer()},
+        tags=["patient-documents"]
+    )
+    def create(self, request, patient_pk=None):
+        """Yangi hujjat yuklash"""
         patient = get_object_or_404(Patient, pk=patient_pk)
-        serializer = self.get_serializer(data=request.data, context={"request": request})
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         document = serializer.save(patient=patient, uploaded_by=request.user)
-        PatientHistory.objects.create(patient=patient, author=request.user,
-                                      comment=f"Hujjat yuklandi: {serializer.validated_data.get('description', '')}")
-        return Response(self.get_serializer(document, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
-    @swagger_auto_schema(operation_description="Hujjatni o‘chirish.", responses={204: "Deleted successfully"})
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        patient = instance.patient
-        PatientHistory.objects.create(patient=patient, author=request.user,
-                                      comment=f"Hujjat o‘chirildi: {instance.description or instance.file.name}")
-        instance.delete()
+        # History yozish
+        PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment=f"📎 Hujjat yuklandi: {document.file.name if document.file else 'Unknown'}"
+        )
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @swagger_auto_schema(
+        operation_summary="📎 Hujjatni o'chirish",
+        operation_description="Bemorning hujjatini o'chirish",
+        responses={204: "Hujjat muvaffaqiyatli o'chirildi"},
+        tags=["patient-documents"]
+    )
+    def destroy(self, request, patient_pk=None, pk=None):
+        """Hujjatni o'chirish"""
+        document = self.get_object()
+        patient = document.patient
+        file_name = document.file.name if document.file else 'Unknown'
+        document.delete()
+
+        # History yozish
+        PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment=f"🗑️ Hujjat o'chirildi: {file_name}"
+        )
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ===============================================================
-# 🧩 3.5 — JAVOB XATLARI
+# 📧 RESPONSE LETTERS VIEWSET
 # ===============================================================
-class ResponseLettersViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
+class ResponseLettersViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    📧 Javob xatlari (Response Letters)
+    - Bemorga yuborilgan rasmiy xatlar
+    - Faqat o'qish uchun
+    """
+    serializer_class = PatientDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(operation_description="response_letters bosqichidagi bemorlar va 'partner' hujjatlari.")
-    def list(self, request):
-        stage = Stage.objects.filter(code_name="response_letters").first()
-        if not stage:
-            return Response([], status=200)
-        patients = Patient.objects.filter(stage=stage, is_archived=False).order_by("-created_at")
-        data = []
-        for p in patients:
-            partner_docs = p.documents.filter(source_type="partner")
-            data.append({
-                "patient": PatientListSerializer(p, context={"request": request}).data,
-                "partner_documents": PatientDocumentSerializer(partner_docs, many=True, context={"request": request}).data
-            })
-        return Response(data)
+    def get_queryset(self):
+        """Faqat response letter hujjatlar"""
+        patient_id = self.kwargs.get('patient_pk')
+        if patient_id:
+            # Agar description'da "response" yoki "letter" so'zi bo'lsa
+            return PatientDocument.objects.filter(
+                patient_id=patient_id,
+                description__icontains='response'
+            ).order_by('-uploaded_at')
+        return PatientDocument.objects.filter(
+            description__icontains='response'
+        ).order_by('-uploaded_at')
+
+    def get_serializer_context(self):
+        """Context qo'shish"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    @swagger_auto_schema(
+        operation_summary="📧 Javob xatlari ro'yxati",
+        operation_description="Bemorga yuborilgan barcha javob xatlari",
+        responses={200: PatientDocumentSerializer(many=True)},
+        tags=["response-letters"]
+    )
+    def list(self, request, patient_pk=None):
+        """Javob xatlari ro'yxati"""
+        letters = self.get_queryset()
+        serializer = self.get_serializer(letters, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # ===============================================================
-# 🧩 5.1 — SHARTNOMANI TASDIQLASH
+# 📝 CONTRACT APPROVE VIEWSET
 # ===============================================================
 class ContractApproveViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
+    """
+    📝 Shartnoma tasdiqlash
+    - Bemorning shartnomalarini ko'rish va tasdiqlash
+    """
+    permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        method="post",
-        operation_description="Bemor shartnomani tasdiqlaydi (status=approved).",
+        operation_summary="📝 Bemor shartnomalarini olish",
+        operation_description="Bemorning barcha shartnomalarini ko'rish",
+        responses={200: openapi.Response("Shartnomalar ro'yxati")},
+        tags=["contracts"]
     )
-    @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
-        contract = get_object_or_404(Contract, pk=pk)
-        contract.status = "approved"
-        contract.approved_at = timezone.now()
-        contract.save(update_fields=["status", "approved_at"])
-        return Response({"status": "approved"})
+    def list(self, request, patient_pk=None):
+        """Bemor shartnomalarini olish"""
+        try:
+            contracts = Contract.objects.filter(patient_id=patient_pk).order_by('-created_at')
+            data = []
+            for contract in contracts:
+                data.append({
+                    'id': contract.id,
+                    'patient_id': contract.patient.id if contract.patient else None,
+                    'title': getattr(contract, 'title', 'Shartnoma'),
+                    'content': getattr(contract, 'content', ''),
+                    'is_approved': getattr(contract, 'is_approved', False),
+                    'approved_at': getattr(contract, 'approved_at', None),
+                    'created_at': contract.created_at if hasattr(contract, 'created_at') else None,
+                })
+            return Response(data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"detail": f"Xatolik: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @swagger_auto_schema(
+        operation_summary="📝 Shartnomani tasdiqlash",
+        operation_description="Bemor shartnomani tasdiqlaydi",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'is_approved': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Tasdiqlash (true/false)"),
+            }
+        ),
+        responses={200: openapi.Response("Shartnoma tasdiqlandi")},
+        tags=["contracts"]
+    )
+    @action(detail=True, methods=['patch'], url_path='approve')
+    def approve(self, request, patient_pk=None, pk=None):
+        """Shartnomani tasdiqlash"""
+        try:
+            contract = get_object_or_404(Contract, pk=pk, patient_id=patient_pk)
+            is_approved = request.data.get('is_approved', True)
+
+            if hasattr(contract, 'is_approved'):
+                contract.is_approved = is_approved
+            if hasattr(contract, 'approved_at') and is_approved:
+                from django.utils import timezone
+                contract.approved_at = timezone.now()
+
+            contract.save()
+
+            # History yozish
+            patient = contract.patient
+            PatientHistory.objects.create(
+                patient=patient,
+                author=request.user,
+                comment=f"✅ Shartnoma {'tasdiqlandi' if is_approved else 'rad etildi'}"
+            )
+
+            return Response({
+                "success": True,
+                "message": f"Shartnoma {'tasdiqlandi' if is_approved else 'rad etildi'}"
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"detail": f"Xatolik: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 # ===============================================================
-# 🧩 5.2 — BEMOR PROFILI (AVATAR bilan)
+# 👤 ME PROFILE VIEW (Joriy foydalanuvchi)
 # ===============================================================
-class MeProfileView(APIView):
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
+class MeProfileView(generics.RetrieveUpdateAPIView):
+    """
+    👤 Mening profilim
+    - GET: Joriy foydalanuvchi ma'lumotlarini olish
+    - PATCH/PUT: Profil ma'lumotlarini yangilash
+    """
+    serializer_class = PatientProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(operation_description="Joriy user uchun Patient profili (bemorga mo‘ljallangan panel).")
-    def get(self, request):
-        patient = Patient.objects.filter(created_by=request.user, is_archived=False).order_by("-created_at").first()
-        if not patient:
-            return Response({"detail": "Patient topilmadi"}, status=404)
-        return Response(PatientProfileSerializer(patient, context={"request": request}).data)
+    def get_object(self):
+        """Joriy foydalanuvchini qaytarish"""
+        user = self.request.user
+
+        # Agar user bemor bo'lsa
+        if hasattr(user, 'phone_number'):
+            try:
+                return Patient.objects.get(phone_number=user.phone_number)
+            except Patient.DoesNotExist:
+                return None
+        return None
+
+    def get_serializer_context(self):
+        """Context qo'shish"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     @swagger_auto_schema(
-        operation_summary="🖼 Profil rasmi (avatar) yuklash yoki yangilash",
-        operation_description="Bemor profil rasmi (avatar)ni yuklashi yoki yangilashi mumkin.",
-        consumes=['multipart/form-data'],
-        manual_parameters=[
-            openapi.Parameter(
-                name="avatar",
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_FILE,
-                required=True,
-                description="Yangi profil rasmi (maks. 5MB, JPG/PNG/GIF)"
-            ),
-        ],
-        responses={200: openapi.Response("Avatar muvaffaqiyatli yangilandi")},
+        operation_summary="👤 Mening profilim",
+        operation_description="Joriy foydalanuvchining profil ma'lumotlari",
+        responses={200: PatientProfileSerializer()},
+        tags=["me-profile"]
     )
-    def patch(self, request):
-        patient = Patient.objects.filter(created_by=request.user, is_archived=False).first()
+    def get(self, request, *args, **kwargs):
+        """Profil ma'lumotlarini olish"""
+        patient = self.get_object()
         if not patient:
-            return Response({"detail": "Patient topilmadi"}, status=404)
+            return Response(
+                {"detail": "Profil topilmadi"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = self.get_serializer(patient)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-        avatar_file = request.data.get("avatar")
-        if not avatar_file:
-            return Response({"detail": "Fayl yuborilmadi"}, status=400)
+    @swagger_auto_schema(
+        operation_summary="👤 Profilni yangilash",
+        operation_description="Joriy foydalanuvchi profil ma'lumotlarini yangilash",
+        request_body=PatientProfileSerializer,
+        responses={200: PatientProfileSerializer()},
+        tags=["me-profile"]
+    )
+    def patch(self, request, *args, **kwargs):
+        """Profilni qisman yangilash"""
+        patient = self.get_object()
+        if not patient:
+            return Response(
+                {"detail": "Profil topilmadi"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        patient.avatar = avatar_file
-        patient.save(update_fields=["avatar", "updated_at"])
-        PatientHistory.objects.create(patient=patient, author=request.user, comment="Profil rasmi yangilandi")
+        serializer = self.get_serializer(patient, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
 
-        return Response({
-            "success": True,
-            "avatar_url": request.build_absolute_uri(patient.avatar.url)
-        }, status=200)
+        # History yozish
+        PatientHistory.objects.create(
+            patient=patient,
+            author=request.user,
+            comment="👤 Profil ma'lumotlari yangilandi"
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
