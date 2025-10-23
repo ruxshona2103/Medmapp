@@ -1,3 +1,7 @@
+# ===============================================================
+# SETTINGS.PY - LOCAL VA PRODUCTION UCHUN
+# ===============================================================
+
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -10,12 +14,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # 🔐 SECURITY SETTINGS
 # ==========================
 SECRET_KEY = "django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_"
-DEBUG = True  # ⚠️ Productionda False bo'lishi kerak
+
+# Environment detection
+IS_PRODUCTION = os.environ.get('ENVIRONMENT') == 'production'
+DEBUG = not IS_PRODUCTION  # Production'da False, local'da True
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
-    "medmapp-1pjj.onrender.com",   # Render backend
+    "medmapp-1pjj.onrender.com",
 ]
 
 # ==========================
@@ -63,7 +70,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "corsheaders.middleware.CorsMiddleware",   # ⚠️ Juda muhim — tepasida bo‘lsin
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -114,8 +121,9 @@ CHANNEL_LAYERS = {
 AUTH_USER_MODEL = "authentication.CustomUser"
 
 # ==========================
-# 💾 DATABASE
+# 💾 DATABASE - LOCAL VA PRODUCTION
 # ==========================
+    # Production database (Render)
 DATABASE_URL = "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
 DATABASES = {
     "default": dj_database_url.config(
@@ -124,6 +132,27 @@ DATABASES = {
         ssl_require=True
     )
 }
+# else:
+#     # Local database (SQLite yoki PostgreSQL)
+#     # VARIANT A: SQLite (oson)
+#     DATABASES = {
+#         'default': {
+#             'ENGINE': 'django.db.backends.sqlite3',
+#             'NAME': BASE_DIR / 'db.sqlite3',
+#         }
+#     }
+
+    # VARIANT B: Local PostgreSQL (agar o'rnatilgan bo'lsa)
+    # DATABASES = {
+    #     'default': {
+    #         'ENGINE': 'django.db.backends.postgresql',
+    #         'NAME': 'medmapp_local',
+    #         'USER': 'postgres',
+    #         'PASSWORD': 'postgres',
+    #         'HOST': 'localhost',
+    #         'PORT': '5432',
+    #     }
+    # }
 
 # ==========================
 # 🔐 JWT AUTH
@@ -141,11 +170,15 @@ SIMPLE_JWT = {
 # ==========================
 # 🌐 CORS / CSRF CONFIG
 # ==========================
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://med-mapp-admin.vercel.app",
-]
+if IS_PRODUCTION:
+    CORS_ALLOWED_ORIGINS = [
+        "https://med-mapp-admin.vercel.app",
+    ]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
 CORS_ALLOW_HEADERS = [
     "content-type",
@@ -157,9 +190,6 @@ CSRF_TRUSTED_ORIGINS = [
     "https://med-mapp-admin.vercel.app",
 ]
 
-# ✅ Agar developmentda tez test qilish kerak bo‘lsa:
-# CORS_ALLOW_ALL_ORIGINS = True
-
 # ==========================
 # 📄 STATIC / MEDIA
 # ==========================
@@ -169,6 +199,9 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Media papkani yaratish
+os.makedirs(MEDIA_ROOT, exist_ok=True)
 
 # ==========================
 # 🧭 REST FRAMEWORK
