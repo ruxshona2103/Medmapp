@@ -44,9 +44,6 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-from rest_framework.pagination import PageNumberPagination
-
-
 class StandardResultsSetPagination(PageNumberPagination):
     """
     Pagination konfiguratsiyasi.
@@ -54,6 +51,7 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
+
 
 class ConversationViewSet(viewsets.ModelViewSet):
     """
@@ -88,14 +86,57 @@ class ConversationViewSet(viewsets.ModelViewSet):
             return Conversation.objects.none()
 
         logger.debug(f"Fetching conversations for user {user.id}")
-        return (
+        qs = (
             Conversation.objects.filter(
                 Q(participants__user=user) | Q(created_by=user), is_active=True
             )
             .select_related("patient", "operator")
             .prefetch_related("participants")
-            .order_by("-last_message_at")
+            .distinct()
         )
+
+        # 📅 Sana bo'yicha filter
+        filter_date = self.request.query_params.get("date")
+        if filter_date:
+            try:
+                qs = qs.filter(created_at__date=filter_date)
+                logger.debug(f"Filtering conversations by date: {filter_date}")
+            except Exception as e:
+                logger.warning(f"Invalid date filter: {filter_date}, error: {e}")
+
+        # ⚙️ Status bo'yicha filter
+        status_filter = self.request.query_params.get("status")
+        if status_filter and status_filter.lower() != "barchasi":
+            status_mapping = {
+                "yangi": "new",
+                "jarayonda": "in_progress",
+                "yakunlangan": "completed",
+            }
+            mapped_status = status_mapping.get(status_filter.lower(), status_filter.lower())
+
+            # Agar Conversation modelida status field bo'lsa
+            if hasattr(Conversation, 'status'):
+                qs = qs.filter(status=mapped_status)
+                logger.debug(f"Filtering conversations by status: {mapped_status}")
+            else:
+                # Agar status field yo'q bo'lsa, unread_count yoki boshqa logika bo'yicha filter
+                if mapped_status == "new":
+                    # Yangi - o'qilmagan xabarlar bor
+                    qs = qs.filter(
+                        messages__read_status__isnull=True
+                    ).exclude(messages__sender=user).distinct()
+                elif mapped_status == "in_progress":
+                    # Jarayonda - oxirgi xabar 24 soat ichida
+                    qs = qs.filter(
+                        last_message_at__gte=timezone.now() - timezone.timedelta(days=1)
+                    )
+                elif mapped_status == "completed":
+                    # Yakunlangan - barcha xabarlar o'qilgan
+                    qs = qs.filter(
+                        ~Q(messages__read_status__isnull=True) | Q(messages__sender=user)
+                    ).distinct()
+
+        return qs.order_by("-last_message_at")
 
     def get_object(self):
         try:
@@ -128,14 +169,50 @@ class ConversationViewSet(viewsets.ModelViewSet):
         return super().get_serializer_class()
 
     @swagger_auto_schema(
-        operation_summary="Retrieve all conversations with messages",
-        operation_description="Retrieve all conversations with their messages for the authenticated user",
+        operation_summary="📋 Barcha suhbatlarni olish",
+        operation_description="Autentifikatsiya qilingan foydalanuvchi uchun barcha suhbatlarni ko'rish. Sana va status bo'yicha filter qo'llab-quvvatlanadi.",
+        manual_parameters=[
+            openapi.Parameter(
+                "date",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description="Sana bo'yicha filter (YYYY-MM-DD formatda). Misol: 2025-10-22"
+            ),
+            openapi.Parameter(
+                "status",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                enum=["barchasi", "yangi", "jarayonda", "yakunlangan"],
+                description="Status bo'yicha filter: Barchasi, Yangi, Jarayonda, Yakunlangan"
+            ),
+            openapi.Parameter(
+                "page",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifa raqami"
+            ),
+            openapi.Parameter(
+                "page_size",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifadagi elementlar soni (max 100)"
+            ),
+        ],
         responses={200: ConversationSerializer(many=True)},
+        tags=["conversations"]
     )
     def list(self, request, *args, **kwargs):
         try:
             logger.debug(f"Listing conversations for user {request.user.id}")
             queryset = self.get_queryset()
+
+            # Pagination qo'llash
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True, context={"request": request})
+                logger.info(f"Retrieved {len(page)} conversations (paginated)")
+                return self.get_paginated_response(serializer.data)
+
             serializer = self.get_serializer(queryset, many=True, context={"request": request})
             logger.info(f"Retrieved {queryset.count()} conversations")
             return Response(serializer.data)
@@ -148,7 +225,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def create(self, request: Request, *args, **kwargs):
         try:
-            user_id = request.user.id  # JWT token orqali userId
+            user_id = request.user.id
             logger.debug(f"Creating conversation for user {user_id}")
             serializer = self.get_serializer(data=request.data, context={"request": request})
             serializer.is_valid(raise_exception=True)
@@ -199,41 +276,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 except (ValueError, TypeError):
                     logger.warning(f"Invalid since_id: {since_id}")
 
-            search_query = request.query_params.get("q")
-            if search_query:
-                logger.debug(f"Searching for: {search_query}")
-                queryset = queryset.filter(
-                    Q(content__icontains=search_query)
-                    | Q(attachments__original_name__icontains=search_query)
-                ).distinct()
+            serializer = MessageSerializer(queryset, many=True, context=context)
+            logger.info(f"Retrieved {queryset.count()} messages for conversation {conversation.id}")
+            return Response(serializer.data)
 
-            message_count = queryset.count()
-            logger.debug(f"Found {message_count} messages")
-
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                messages_data = MessageSerializer(page, many=True, context=context).data
-                paginated_response = self.get_paginated_response(messages_data).data
-                return Response(
-                    {
-                        "conversation": ConversationSerializer(
-                            conversation, context=context
-                        ).data,
-                        "results": messages_data,
-                        "pagination": paginated_response,
-                    }
-                )
-
-            messages_data = MessageSerializer(queryset, many=True, context=context).data
-            return Response(
-                {
-                    "conversation": ConversationSerializer(
-                        conversation, context=context
-                    ).data,
-                    "results": messages_data,
-                    "count": message_count,
-                }
-            )
         except Exception as e:
             logger.error(f"Error in _get_messages: {str(e)}", exc_info=True)
             return Response(
@@ -243,7 +289,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def _post_message(self, conversation, request, context):
         try:
-            logger.debug(f"Posting message to conversation {conversation.id}, user {request.user.id}")
+            logger.debug(f"Posting message to conversation {conversation.id}")
 
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
@@ -254,61 +300,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            files = request.FILES.getlist("attachments") if request.FILES else []
-            logger.debug(f"Files count: {len(files)}")
-
-            data = {
-                "conversation": conversation.id,
-                "type": request.data.get("type", "text" if not files else "file"),
-                "content": request.data.get("content", "").strip(),
-                "reply_to": request.data.get("reply_to"),
-            }
-
-            logger.debug(f"Message data: {data}")
-
-            if data["type"] == "text" and not data["content"]:
-                logger.warning("Content is required for text messages")
-                return Response(
-                    {"detail": "Content is required for text messages"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            if data["type"] == "file" and not files:
-                logger.warning("At least one file is required for file messages")
-                return Response(
-                    {"detail": "At least one file is required for file messages"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            for file in files:
-                if hasattr(file, "size") and file.size > 10 * 1024 * 1024:
-                    logger.warning(f'File "{file.name}" exceeds 10MB limit')
-                    return Response(
-                        {"detail": f'File "{file.name}" exceeds 10MB limit'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-            context["conversation"] = conversation
+            data = request.data.copy()
+            data["conversation"] = conversation.id
 
             serializer = MessageSerializer(data=data, context=context)
+
             if serializer.is_valid():
-                logger.debug("Serializer valid, saving message...")
                 result = serializer.save()
-                logger.info(f"Message saved successfully: {result['id']}")
+                logger.info(f"Message created successfully in conversation {conversation.id}")
                 return Response(result, status=status.HTTP_201_CREATED)
             else:
-                logger.error(f"Serializer errors: {serializer.errors}")
-                error_detail = {
-                    field: (
-                        [str(error) for error in errors]
-                        if isinstance(errors, list)
-                        else str(errors)
-                    )
-                    for field, errors in serializer.errors.items()
-                }
-                return Response(
-                    {"detail": error_detail}, status=status.HTTP_400_BAD_REQUEST
-                )
+                logger.error(f"Message serializer errors: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
             logger.error(f"Error in _post_message: {str(e)}", exc_info=True)
@@ -318,140 +321,83 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     @swagger_auto_schema(
-        methods=["get"],
-        operation_summary="Retrieve conversation messages",
-        operation_description="Retrieve all messages in a specified conversation",
+        operation_summary="Get messages in a conversation",
+        operation_description="Retrieve all messages in a conversation",
         manual_parameters=[
             openapi.Parameter(
-                name="since_id",
-                in_=openapi.IN_QUERY,
+                "since_id",
+                openapi.IN_QUERY,
                 type=openapi.TYPE_INTEGER,
-                description="Messages after the specified message ID",
-                required=False,
-            ),
-            openapi.Parameter(
-                name="q",
-                in_=openapi.IN_QUERY,
-                type=openapi.TYPE_STRING,
-                description="Search messages",
-                required=False,
-            ),
+                description="Retrieve messages with ID greater than this value",
+            )
         ],
-        responses={
-            200: openapi.Response("List of messages", MessageSerializer(many=True))
-        },
+        responses={200: MessageSerializer(many=True)},
+        tags=["conversations"]
     )
+    @action(detail=True, methods=["get"], url_path="messages")
+    def get_messages(self, request: Request, pk=None):
+        conversation = self.get_object()
+        context = {"request": request}
+        return self._get_messages(conversation, request, context)
+
     @swagger_auto_schema(
-        methods=["post"],
-        operation_summary="Send a new message",
-        operation_description="Send a new message to a specified conversation",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "type": openapi.Schema(
-                    type=openapi.TYPE_STRING, enum=["text", "file"], default="text"
-                ),
-                "content": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Message content"
-                ),
-                "reply_to": openapi.Schema(type=openapi.TYPE_INTEGER, nullable=True),
-            },
-            required=["content"],
-        ),
+        operation_summary="Post a message to a conversation",
+        operation_description="Send a new message in a conversation",
+        request_body=MessageSerializer,
         responses={201: MessageSerializer},
+        tags=["conversations"]
     )
-    @action(detail=True, methods=["get", "post"], url_path="messages")
-    def messages(self, request: Request, pk=None):
-        try:
-            conversation = self.get_object()
-            context = {"request": request}
-
-            if request.method.lower() == "get":
-                return self._get_messages(conversation, request, context)
-            elif request.method.lower() == "post":
-                return self._post_message(conversation, request, context)
-        except Conversation.DoesNotExist:
-            logger.error(f"Conversation {pk} not found")
-            return Response(
-                {"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Error in messages: {str(e)}", exc_info=True)
-            return Response(
-                {"detail": f"Error processing request: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+    @action(detail=True, methods=["post"], url_path="messages")
+    def post_message(self, request: Request, pk=None):
+        conversation = self.get_object()
+        context = {"request": request}
+        return self._post_message(conversation, request, context)
 
     @swagger_auto_schema(
-        operation_summary="Mark messages as read",
-        operation_description="Mark all or specified messages in a conversation as read",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "message_ids": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                    description="Specific message IDs (optional)",
-                )
-            },
-        ),
-        responses={200: "Success"},
+        operation_summary="Mark conversation messages as read",
+        operation_description="Mark all unread messages in a conversation as read",
+        responses={200: openapi.Response("Messages marked as read")},
+        tags=["conversations"]
     )
     @action(detail=True, methods=["post"], url_path="mark-read")
     def mark_read(self, request: Request, pk=None):
         try:
-            logger.debug(f"mark_read called for conversation {pk}, user {request.user.id}")
             conversation = self.get_object()
+            logger.debug(f"mark_read called for conversation {conversation.id}")
 
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
-                    f"User {request.user.id} is not a participant in conversation {pk}"
+                    f"User {request.user.id} is not a participant in conversation {conversation.id}"
                 )
                 return Response(
                     {"detail": "You are not a participant in this conversation"},
-                    status=status.HTTP_403_FORBIDDEN,
+                    status=HTTP_403_FORBIDDEN,
                 )
 
-            message_ids = request.data.get("message_ids", [])
-            messages = conversation.messages.filter(is_deleted=False).exclude(
+            unread_messages = conversation.messages.exclude(
                 sender=request.user
-            )
-            if message_ids:
-                messages = messages.filter(id__in=message_ids)
+            ).exclude(
+                read_status__user=request.user
+            ).filter(is_deleted=False)
 
-            logger.debug(f"Marking {messages.count()} messages as read")
-
-            updated_count = 0
-            for message in messages:
-                status_obj, created = MessageReadStatus.objects.get_or_create(
+            marked_count = 0
+            for message in unread_messages:
+                MessageReadStatus.objects.get_or_create(
                     message=message,
                     user=request.user,
                     defaults={"read_at": timezone.now()},
                 )
-                if created:
-                    message.mark_as_read(request.user)
-                    updated_count += 1
+                message.mark_as_read(request.user)
+                marked_count += 1
 
-            if not message_ids:
-                last_message = messages.order_by("-id").first()
-                if (
-                    last_message
-                    and not MessageReadStatus.objects.filter(
-                        message=last_message, user=request.user
-                    ).exists()
-                ):
-                    MessageReadStatus.objects.create(
-                        message=last_message, user=request.user, read_at=timezone.now()
-                    )
-                    last_message.mark_as_read(request.user)
-                    updated_count += 1
-
-            logger.info(f"Updated {updated_count} message read statuses")
+            logger.info(
+                f"Marked {marked_count} messages as read in conversation {conversation.id}"
+            )
             return Response(
                 {
-                    "detail": f"{updated_count} messages marked as read",
-                    "updated_count": updated_count,
-                    "total_messages": messages.count(),
+                    "detail": f"Marked {marked_count} messages as read",
+                    "conversation_id": conversation.id,
+                    "marked_count": marked_count,
                 }
             )
         except Exception as e:
@@ -462,38 +408,34 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     @swagger_auto_schema(
-        operation_summary="Retrieve prescriptions",
-        operation_description="Retrieve prescriptions for a specified conversation",
-        responses={
-            200: openapi.Response(
-                "List of prescriptions", PrescriptionSerializer(many=True)
-            )
-        },
+        operation_summary="Get prescriptions in a conversation",
+        operation_description="Retrieve all prescriptions shared in a conversation",
+        responses={200: PrescriptionSerializer(many=True)},
+        tags=["conversations"]
     )
     @action(detail=True, methods=["get"], url_path="prescriptions")
     def get_prescriptions(self, request: Request, pk=None):
         try:
-            logger.debug(f"Getting prescriptions for conversation {pk}")
             conversation = self.get_object()
+            logger.debug(f"get_prescriptions called for conversation {conversation.id}")
+
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
-                    f"User {request.user.id} is not a participant in conversation {pk}"
+                    f"User {request.user.id} is not a participant in conversation {conversation.id}"
                 )
                 return Response(
                     {"detail": "You are not a participant in this conversation"},
-                    status=status.HTTP_403_FORBIDDEN,
+                    status=HTTP_403_FORBIDDEN,
                 )
-            prescriptions = conversation.prescriptions.all()
+
+            prescriptions = Prescription.objects.filter(conversation=conversation)
             serializer = PrescriptionSerializer(
                 prescriptions, many=True, context={"request": request}
             )
-            logger.info(f"Retrieved {prescriptions.count()} prescriptions")
-            return Response(serializer.data)
-        except Conversation.DoesNotExist:
-            logger.error(f"Conversation {pk} not found")
-            return Response(
-                {"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
+            logger.info(
+                f"Retrieved {prescriptions.count()} prescriptions for conversation {conversation.id}"
             )
+            return Response(serializer.data)
         except Exception as e:
             logger.error(f"Error in get_prescriptions: {str(e)}", exc_info=True)
             return Response(
@@ -502,65 +444,37 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     @swagger_auto_schema(
-        operation_summary="Retrieve conversation summary",
-        operation_description="Retrieve the summary or details for a specified conversation",
-        responses={200: DoctorSummarySerializer, 404: "No summary found"},
+        operation_summary="Get doctor summary for a conversation",
+        operation_description="Retrieve doctor's summary for a conversation",
+        responses={200: DoctorSummarySerializer()},
+        tags=["conversations"]
     )
     @action(detail=True, methods=["get"], url_path="summary")
     def get_summary(self, request: Request, pk=None):
         try:
-            logger.debug(f"Getting summary for conversation {pk}")
             conversation = self.get_object()
+            logger.debug(f"get_summary called for conversation {conversation.id}")
+
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
-                    f"User {request.user.id} is not a participant in conversation {pk}"
+                    f"User {request.user.id} is not a participant in conversation {conversation.id}"
                 )
                 return Response(
                     {"detail": "You are not a participant in this conversation"},
-                    status=status.HTTP_403_FORBIDDEN,
+                    status=HTTP_403_FORBIDDEN,
                 )
 
-            if conversation.operator and conversation.operator == request.user:
-                summary_data = {
-                    "conversation_id": conversation.id,
-                    "title": conversation.title,
-                    "patient": UserTinySerializer(
-                        conversation.patient, context={"request": request}
-                    ).data,
-                    "operator": UserTinySerializer(
-                        conversation.operator, context={"request": request}
-                    ).data,
-                    "last_message_at": conversation.last_message_at,
-                    "unread_count": conversation.messages.filter(
-                        sender=conversation.patient, is_deleted=False
-                    )
-                    .exclude(read_statuses__user=request.user)
-                    .count(),
-                    "message_count": conversation.messages.filter(
-                        is_deleted=False
-                    ).count(),
-                }
-                logger.info(f"Summary retrieved for operator in conversation {pk}")
-                return Response(summary_data)
-
-            try:
-                summary = conversation.doctor_summary
-            except DoctorSummary.DoesNotExist:
-                logger.warning(f"No summary found for conversation {pk}")
+            summary = DoctorSummary.objects.filter(conversation=conversation).first()
+            if not summary:
+                logger.info(f"No summary found for conversation {conversation.id}")
                 return Response(
-                    {"detail": "No summary found for this conversation"},
+                    {"detail": "No summary available for this conversation"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
             serializer = DoctorSummarySerializer(summary, context={"request": request})
-            logger.info(f"Doctor summary retrieved for conversation {pk}")
+            logger.info(f"Retrieved summary for conversation {conversation.id}")
             return Response(serializer.data)
-
-        except Conversation.DoesNotExist:
-            logger.error(f"Conversation {pk} not found")
-            return Response(
-                {"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
-            )
         except Exception as e:
             logger.error(f"Error in get_summary: {str(e)}", exc_info=True)
             return Response(
@@ -569,36 +483,37 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     @swagger_auto_schema(
-        operation_summary="Retrieve files",
-        operation_description="Retrieve files attached to a specified conversation",
-        responses={
-            200: openapi.Response("List of files", AttachmentSerializer(many=True))
-        },
+        operation_summary="Get files in a conversation",
+        operation_description="Retrieve all file attachments in a conversation",
+        responses={200: AttachmentSerializer(many=True)},
+        tags=["conversations"]
     )
     @action(detail=True, methods=["get"], url_path="files")
     def get_files(self, request: Request, pk=None):
         try:
-            logger.debug(f"Getting files for conversation {pk}")
             conversation = self.get_object()
+            logger.debug(f"get_files called for conversation {conversation.id}")
+
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
-                    f"User {request.user.id} is not a participant in conversation {pk}"
+                    f"User {request.user.id} is not a participant in conversation {conversation.id}"
                 )
                 return Response(
                     {"detail": "You are not a participant in this conversation"},
-                    status=status.HTTP_403_FORBIDDEN,
+                    status=HTTP_403_FORBIDDEN,
                 )
-            files = Attachment.objects.filter(message__conversation=conversation)
+
+            attachments = Attachment.objects.filter(
+                message__conversation=conversation, message__is_deleted=False
+            ).select_related("message", "uploaded_by")
+
             serializer = AttachmentSerializer(
-                files, many=True, context={"request": request}
+                attachments, many=True, context={"request": request}
             )
-            logger.info(f"Retrieved {files.count()} files")
+            logger.info(
+                f"Retrieved {attachments.count()} files for conversation {conversation.id}"
+            )
             return Response(serializer.data)
-        except Conversation.DoesNotExist:
-            logger.error(f"Conversation {pk} not found")
-            return Response(
-                {"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
-            )
         except Exception as e:
             logger.error(f"Error in get_files: {str(e)}", exc_info=True)
             return Response(
@@ -607,25 +522,52 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     @swagger_auto_schema(
-        operation_summary="Operator mark messages as read",
-        operation_description="Mark messages in a patient conversation as read by operator",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "message_ids": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(type=openapi.TYPE_INTEGER),
-                    description="Specific message IDs (optional)",
-                )
-            },
-        ),
-        responses={200: "Success"},
+        operation_summary="Operator marks conversation as read",
+        operation_description="Mark all unread messages in a conversation as read (operator action)",
+        responses={200: openapi.Response("Messages marked as read by operator")},
+        tags=["conversations"]
     )
-    @action(detail=True, methods=["post"], url_path="operator/mark-read")
+    @action(detail=True, methods=["post"], url_path="operator-mark-read")
     def operator_mark_read(self, request: Request, pk=None):
         try:
-            logger.debug(f"operator_mark_read called for conversation {pk}")
-            return self.mark_read(request, pk)
+            conversation = self.get_object()
+            logger.debug(f"operator_mark_read called for conversation {conversation.id}")
+
+            if not request.user.is_staff and not hasattr(request.user, "is_operator"):
+                logger.warning(
+                    f"User {request.user.id} is not authorized for operator actions"
+                )
+                return Response(
+                    {"detail": "Only operators can perform this action"},
+                    status=HTTP_403_FORBIDDEN,
+                )
+
+            unread_messages = conversation.messages.exclude(
+                sender=request.user
+            ).exclude(
+                read_status__user=request.user
+            ).filter(is_deleted=False)
+
+            marked_count = 0
+            for message in unread_messages:
+                MessageReadStatus.objects.get_or_create(
+                    message=message,
+                    user=request.user,
+                    defaults={"read_at": timezone.now()},
+                )
+                message.mark_as_read(request.user)
+                marked_count += 1
+
+            logger.info(
+                f"Operator marked {marked_count} messages as read in conversation {conversation.id}"
+            )
+            return Response(
+                {
+                    "detail": f"Marked {marked_count} messages as read",
+                    "conversation_id": conversation.id,
+                    "marked_count": marked_count,
+                }
+            )
         except Exception as e:
             logger.error(f"Error in operator_mark_read: {str(e)}", exc_info=True)
             return Response(
@@ -635,91 +577,41 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         methods=["get"],
-        operation_summary="Retrieve operator conversation messages",
-        operation_description="Retrieve messages in a conversation with a patient by operator",
+        operation_summary="Operator conversation messages (GET)",
+        operation_description="Get messages in operator-patient conversation",
         manual_parameters=[
             openapi.Parameter(
-                name="patient_id",
-                in_=openapi.IN_PATH,
+                "since_id",
+                openapi.IN_QUERY,
                 type=openapi.TYPE_INTEGER,
-                description="Patient ID",
-                required=True,
-            ),
-            openapi.Parameter(
-                name="since_id",
-                in_=openapi.IN_QUERY,
-                type=openapi.TYPE_INTEGER,
-                description="Messages after the specified message ID",
-                required=False,
-            ),
+                description="Retrieve messages with ID greater than this value",
+            )
         ],
-        responses={
-            200: openapi.Response("List of messages", MessageSerializer(many=True)),
-            403: "Not an operator",
-            404: "Patient not found",
-        },
+        responses={200: MessageSerializer(many=True)},
+        tags=["conversations"]
     )
     @swagger_auto_schema(
         methods=["post"],
-        operation_summary="Send message in operator conversation",
-        operation_description="Send a new message in a conversation with a patient by operator",
-        manual_parameters=[
-            openapi.Parameter(
-                name="patient_id",
-                in_=openapi.IN_PATH,
-                type=openapi.TYPE_INTEGER,
-                description="Patient ID",
-                required=True,
-            ),
-        ],
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "type": openapi.Schema(
-                    type=openapi.TYPE_STRING, enum=["text", "file"], default="text"
-                ),
-                "content": openapi.Schema(
-                    type=openapi.TYPE_STRING, description="Message content"
-                ),
-                "reply_to": openapi.Schema(type=openapi.TYPE_INTEGER, nullable=True),
-            },
-            required=["content"],
-        ),
-        responses={
-            201: MessageSerializer,
-            403: "Not an operator",
-            404: "Patient not found",
-        },
+        operation_summary="Operator conversation messages (POST)",
+        operation_description="Post message in operator-patient conversation",
+        request_body=MessageSerializer,
+        responses={201: MessageSerializer},
+        tags=["conversations"]
     )
-    @action(
-        detail=False,
-        methods=["get", "post"],
-        url_path=r"operator/(?P<patient_id>\d+)/messages",
-    )
+    @action(detail=False, methods=["get", "post"], url_path="operator/(?P<patient_id>[^/.]+)")
     def operator_conversation_messages(self, request: Request, patient_id=None):
         try:
-            logger.debug(f"Operator conversation messages called, patient_id: {patient_id}")
+            logger.debug(
+                f"operator_conversation_messages called for patient {patient_id}"
+            )
 
-            try:
-                patient_id = int(patient_id)
-            except (ValueError, TypeError):
-                logger.error(f"Invalid patient ID format: {patient_id}")
-                return Response(
-                    {"detail": "Invalid patient ID format"},
-                    status=status.HTTP_400_BAD_REQUEST,
+            if not request.user.is_staff and not hasattr(request.user, "is_operator"):
+                logger.warning(
+                    f"User {request.user.id} is not authorized for operator actions"
                 )
-
-            if not (
-                request.user.is_authenticated
-                and (
-                    request.user.is_staff
-                    or getattr(request.user, "role", None) == "operator"
-                )
-            ):
-                logger.warning(f"User {request.user.id} is not authorized as operator")
                 return Response(
-                    {"detail": "Only operators can use this endpoint"},
-                    status=status.HTTP_403_FORBIDDEN,
+                    {"detail": "Only operators can perform this action"},
+                    status=HTTP_403_FORBIDDEN,
                 )
 
             patient = get_object_or_404(User, pk=patient_id)
@@ -826,7 +718,11 @@ class MessageViewSet(
         instance.soft_delete()
         logger.info(f"Message {instance.id} soft deleted by user {self.request.user.id}")
 
-    @swagger_auto_schema(operation_summary="Mark a single message as read")
+    @swagger_auto_schema(
+        operation_summary="Mark a single message as read",
+        responses={200: openapi.Response("Message marked as read")},
+        tags=["messages"]
+    )
     @action(detail=True, methods=["post"], url_path="mark-read")
     def mark_read_single(self, request: Request, pk=None):
         try:
@@ -849,7 +745,7 @@ class MessageViewSet(
                     status=HTTP_403_FORBIDDEN,
                 )
 
-            status, created = MessageReadStatus.objects.get_or_create(
+            status_obj, created = MessageReadStatus.objects.get_or_create(
                 message=message, user=request.user, defaults={"read_at": timezone.now()}
             )
 
@@ -871,7 +767,18 @@ class MessageViewSet(
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    @swagger_auto_schema(operation_summary="Reply to a message")
+    @swagger_auto_schema(
+        operation_summary="Reply to a message",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["content"],
+            properties={
+                "content": openapi.Schema(type=openapi.TYPE_STRING, description="Reply content"),
+            },
+        ),
+        responses={201: MessageSerializer},
+        tags=["messages"]
+    )
     @action(detail=True, methods=["post"], url_path="reply")
     def create_reply(self, request: Request, pk=None):
         try:
