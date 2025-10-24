@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from core.models import Stage, Tag
 from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
+import os
 
 
 # ===============================================================
@@ -30,7 +31,6 @@ class PatientDocumentSerializer(serializers.ModelSerializer):
     def get_file_name(self, obj):
         """Fayl nomi"""
         if obj.file:
-            import os
             return os.path.basename(obj.file.name)
         return None
 
@@ -87,13 +87,13 @@ class PatientListSerializer(serializers.ModelSerializer):
 # 🔹 PATIENT DETAIL SERIALIZER - To'liq ma'lumotlar
 # ===============================================================
 class PatientDetailSerializer(serializers.ModelSerializer):
-    """Bemor to'liq ma'lumotlari - history va documents bilan"""
+    """Bemor to'liq ma'lumotlari - history, documents va applications bilan"""
     stage_id = serializers.IntegerField(source='stage.id', read_only=True, allow_null=True)
     tag_id = serializers.IntegerField(source='tag.id', read_only=True, allow_null=True)
     stage = serializers.SerializerMethodField()
     tag = serializers.SerializerMethodField()
-    history = PatientHistorySerializer(many=True, read_only=True)
-    documents = PatientDocumentSerializer(many=True, read_only=True)
+    history = serializers.SerializerMethodField()
+    documents = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
     applications = serializers.SerializerMethodField()
     total_applications = serializers.SerializerMethodField()
@@ -152,23 +152,38 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             return obj.avatar.url
         return None
 
+    def get_history(self, obj):
+        """Bemor tarixi"""
+        history_items = PatientHistory.objects.filter(patient=obj).select_related('author').order_by('-created_at')[:20]
+        return PatientHistorySerializer(history_items, many=True).data
+
+    def get_documents(self, obj):
+        """Bemor hujjatlari"""
+        documents = PatientDocument.objects.filter(patient=obj).order_by('-uploaded_at')
+        return PatientDocumentSerializer(documents, many=True, context=self.context).data
+
     def get_applications(self, obj):
         """Bemorning arizalari - documents bilan"""
-        # Import bu yerda circular import'dan qochish uchun
-        from applications.models import Application
-        from applications.serializers import ApplicationSerializer
+        try:
+            from applications.models import Application
+            from applications.serializers import ApplicationSerializer
 
-        applications = Application.objects.filter(
-            patient=obj,
-            is_archived=False
-        ).select_related('stage').prefetch_related('documents', 'applicationhistory_set').order_by('-created_at')
+            applications = Application.objects.filter(
+                patient=obj,
+                is_archived=False
+            ).select_related('stage').prefetch_related('documents').order_by('-created_at')
 
-        return ApplicationSerializer(applications, many=True, context=self.context).data
+            return ApplicationSerializer(applications, many=True, context=self.context).data
+        except Exception as e:
+            return []
 
     def get_total_applications(self, obj):
         """Jami arizalar soni"""
-        from applications.models import Application
-        return Application.objects.filter(patient=obj, is_archived=False).count()
+        try:
+            from applications.models import Application
+            return Application.objects.filter(patient=obj, is_archived=False).count()
+        except:
+            return 0
 
 
 # ===============================================================
