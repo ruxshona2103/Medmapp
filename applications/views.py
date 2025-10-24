@@ -16,9 +16,9 @@ from .serializers import (
     DocumentSerializer,
     CompletedApplicationSerializer,
 )
+
 from patients.models import Patient
 from core.models import Stage
-
 
 # ===============================================================
 # 🩺 APPLICATIONS – Yangi va jarayondagi murojaatlar
@@ -84,17 +84,12 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 | models.Q(patient__full_name__icontains=search)
             )
 
-        # ⚙️ Status filter
         status_filter = request.query_params.get("status")
         if status_filter and status_filter.lower() != "all":
             qs = qs.filter(status=status_filter.lower())
-
-        # 📅 Bitta sana bo'yicha filter
         filter_date = request.query_params.get("date")
         if filter_date:
             qs = qs.filter(created_at__date=filter_date)
-
-        # 👤 Patient ID bo'yicha filter
         patient_id = request.query_params.get("patient_id")
         if patient_id:
             qs = qs.filter(patient__id=patient_id)
@@ -102,75 +97,94 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(qs.order_by("-created_at"), many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-# ===============================================================
-# 👤 PATIENT ID BO'YICHA ARIZALAR
-# ===============================================================
 class ApplicationPagination(PageNumberPagination):
-    page_size = 10
+    page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
 
 
 class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    👤 Bemorning barcha arizalarini ko'rish (patient_id bo'yicha)
-    - GET /applications/patient/{patient_id}/ - Bemorning barcha arizalari
-    - Filter: status, search (clinic), date
-    - Pagination qo'llab-quvvatlanadi
-    """
     serializer_class = ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = ApplicationPagination
-    lookup_field = 'patient_id'
+    lookup_field = 'pk'
 
     def get_queryset(self):
+        # ✅ PATH'dan olish (URLconf'dan)
         patient_id = self.kwargs.get('patient_id')
-        qs = Application.objects.filter(
-            patient__id=patient_id,
+
+        if not patient_id:
+            return Application.objects.none()
+
+        return Application.objects.filter(
+            patient_id=patient_id,
             is_archived=False
-        ).select_related("patient", "stage").prefetch_related("documents", "history")
+        ).select_related('patient', 'stage').prefetch_related('documents').order_by('-created_at')
 
-        # 🔍 Qidiruv (klinika nomi bo'yicha)
-        search = self.request.query_params.get("search")
-        if search:
-            qs = qs.filter(clinic_name__icontains=search)
-
-        # ⚙️ Status filter
-        status_filter = self.request.query_params.get("status")
-        if status_filter and status_filter.lower() != "all":
-            qs = qs.filter(status=status_filter.lower())
-
-        # 📅 Sana bo'yicha filter
-        filter_date = self.request.query_params.get("date")
-        if filter_date:
-            qs = qs.filter(created_at__date=filter_date)
-
-        return qs.order_by("-created_at")
+    def get_serializer_context(self):
+        """Context"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     @swagger_auto_schema(
-        operation_summary="👤 Bemorning barcha arizalarini olish",
-        operation_description="Bemor ID bo'yicha barcha arizalarni ko'rish. Search (clinic), status, date filterlari bilan. Paginatsiya qo'llab-quvvatlanadi.",
+        operation_summary="Bemorning barcha arizalari",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Klinika nomi bo'yicha qidirish"),
-            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              enum=["all", "new", "in_progress", "completed", "rejected"],
-                              description="Ariza holati bo'yicha filter"),
-            openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Sana bo'yicha filter (YYYY-MM-DD)"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifa raqami"),
-            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifadagi elementlar soni (max 100)"),
+            openapi.Parameter(
+                'status',
+                openapi.IN_QUERY,
+                type=openapi.TYPE_STRING,
+                description="Status filter (new, in_progress, completed, rejected, all)",
+                required=False
+            ),
+            openapi.Parameter(
+                'page',
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifa raqami",
+                required=False
+            ),
+            openapi.Parameter(
+                'page_size',
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifadagi elementlar soni (max 100)",
+                required=False
+            ),
         ],
-        responses={200: ApplicationSerializer(many=True)},
-        tags=["applications"]
+        responses={
+            200: ApplicationSerializer(many=True),
+            404: "Bemor topilmadi"
+        },
+        tags=["patient-applications"]
     )
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-
-        # Pagination
+    def list(self, request, patient_id=None):
+        if not patient_id:
+            return Response(
+                {"detail": "Patient ID topilmadi"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        queryset = self.get_queryset()
+        if not queryset.exists():
+            from patients.models import Patient
+            if not Patient.objects.filter(id=patient_id).exists():
+                return Response(
+                    {"detail": f"Bemor ID {patient_id} topilmadi"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            else:
+                return Response(
+                    {
+                        "count": 0,
+                        "next": None,
+                        "previous": None,
+                        "results": []
+                    },
+                    status=status.HTTP_200_OK
+                )
+        status_param = request.query_params.get('status', 'all')
+        if status_param and status_param != 'all':
+            queryset = queryset.filter(status=status_param)
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -180,25 +194,45 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_summary="👤 Bemorning bitta arizasini olish (application_id bo'yicha)",
-        operation_description="Bemor ID va Application ID bo'yicha bitta arizaning to'liq ma'lumotlarini olish",
-        responses={200: ApplicationSerializer()},
-        tags=["applications"]
+        operation_summary="Bemorning bitta arizasi",
+        operation_description="""
+        Bemorning bitta arizasi - to'liq ma'lumotlar.
+
+        URL: GET /api/applications/patient/{patient_id}/{pk}/
+        Masalan: GET /api/applications/patient/19/39/
+        """,
+        responses={
+            200: ApplicationSerializer(),
+            404: "Ariza topilmadi"
+        },
+        tags=["patient-applications"]
     )
-    def retrieve(self, request, *args, **kwargs):
-        patient_id = self.kwargs.get('patient_id')
-        app_id = self.kwargs.get('pk')
+    def retrieve(self, request, patient_id=None, pk=None):
+        if not patient_id or not pk:
+            return Response(
+                {"detail": "Patient ID va Application ID majburiy"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            application = Application.objects.select_related(
+                'patient',
+                'stage'
+            ).prefetch_related(
+                'documents'
+            ).get(
+                pk=pk,
+                patient_id=patient_id,
+                is_archived=False
+            )
 
-        app = get_object_or_404(
-            Application.objects.select_related("patient", "stage").prefetch_related("documents", "history"),
-            id=app_id,
-            patient__id=patient_id,
-            is_archived=False
-        )
-        serializer = self.get_serializer(app)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+            serializer = self.get_serializer(application)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
-
+        except Application.DoesNotExist:
+            return Response(
+                {"detail": f"Ariza ID {pk} bemor ID {patient_id} uchun topilmadi"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 # ===============================================================
 # 📎 HUJJATLAR (Documents)
 # ===============================================================
