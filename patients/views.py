@@ -64,6 +64,11 @@ class PatientViewSet(viewsets.ModelViewSet):
         """Queryset - filter va search bilan"""
         queryset = Patient.objects.all().select_related('stage', 'tag')
 
+        # 🆔 Patient ID bo'yicha filter (bitta bemor)
+        patient_id = self.request.query_params.get('patient_id')
+        if patient_id:
+            queryset = queryset.filter(id=patient_id)
+
         # 🔍 Qidiruv (ism, telefon, email)
         search = self.request.query_params.get('search')
         if search:
@@ -97,6 +102,8 @@ class PatientViewSet(viewsets.ModelViewSet):
         operation_summary="👤 Barcha bemorlar ro'yxati (Kanban board uchun)",
         operation_description="Bemorlar ro'yxati - minimal ma'lumotlar (id, ism, telefon, stage_id, tag_id). Kanban board uchun optimizatsiya qilingan.",
         manual_parameters=[
+            openapi.Parameter('patient_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Bitta bemor bo'yicha filter (patient ID)"),
             openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING,
                               description="Ism, telefon yoki email bo'yicha qidirish"),
             openapi.Parameter('stage_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
@@ -631,75 +638,169 @@ class ContractApproveViewSet(viewsets.ViewSet):
 # ===============================================================
 # 👤 ME PROFILE VIEW (Joriy foydalanuvchi)
 # ===============================================================
+# patients/views.py
+# ===============================================================
+# ME PROFILE VIEW - JWT TOKEN ORQALI USER PROFILI
+# ===============================================================
 class MeProfileView(generics.RetrieveUpdateAPIView):
-    """
-    👤 Mening profilim
-    - GET: Joriy foydalanuvchi ma'lumotlarini olish
-    - PATCH/PUT: Profil ma'lumotlarini yangilash
-    """
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        """Joriy foydalanuvchini qaytarish"""
         user = self.request.user
 
-        # Agar user bemor bo'lsa
-        if hasattr(user, 'phone_number'):
+        # 1. Phone number orqali (asosiy usul)
+        if hasattr(user, 'phone_number') and user.phone_number:
             try:
-                return Patient.objects.get(phone_number=user.phone_number)
+                return Patient.objects.select_related('stage', 'tag').get(
+                    phone_number=user.phone_number
+                )
             except Patient.DoesNotExist:
-                return None
+                pass
+
+        # 2. User ID orqali (created_by)
+        try:
+            return Patient.objects.select_related('stage', 'tag').get(
+                created_by=user
+            )
+        except Patient.DoesNotExist:
+            pass
+
+        # 3. Profil topilmadi
         return None
 
     def get_serializer_context(self):
-        """Context qo'shish"""
+        """Context - file URL'lar uchun request kerak"""
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
 
     @swagger_auto_schema(
-        operation_summary="👤 Mening profilim",
-        operation_description="Joriy foydalanuvchining profil ma'lumotlari",
-        responses={200: PatientProfileSerializer()},
+        operation_summary=" Mening profilim",
+        responses={
+            200: PatientProfileSerializer(),
+            401: "Autentifikatsiya xatosi (JWT token yo'q yoki yaroqsiz)",
+            404: "Profil topilmadi"
+        },
         tags=["me-profile"]
     )
     def get(self, request, *args, **kwargs):
         """Profil ma'lumotlarini olish"""
         patient = self.get_object()
+
         if not patient:
             return Response(
-                {"detail": "Profil topilmadi"},
+                {
+                    "detail": "Profil topilmadi",
+                    "help": "Iltimos, avval profil yarating (PUT yoki PATCH so'rovini yuboring)"
+                },
                 status=status.HTTP_404_NOT_FOUND
             )
+
         serializer = self.get_serializer(patient)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_summary="👤 Profilni yangilash",
-        operation_description="Joriy foydalanuvchi profil ma'lumotlarini yangilash",
+        operation_summary="Profilni qisman yangilash",
+        operation_description="""
+        Profil ma'lumotlarini qisman yangilash (PATCH).
+
+        Agar profil yo'q bo'lsa - yangi profil yaratadi.
+
+        Faqat yuborilgan fieldlar yangilanadi.
+        """,
         request_body=PatientProfileSerializer,
-        responses={200: PatientProfileSerializer()},
+        responses={
+            200: PatientProfileSerializer(),
+            201: "Yangi profil yaratildi",
+            400: "Validation xatosi",
+            401: "JWT token xatosi"
+        },
         tags=["me-profile"]
     )
     def patch(self, request, *args, **kwargs):
-        """Profilni qisman yangilash"""
         patient = self.get_object()
-        if not patient:
-            return Response(
-                {"detail": "Profil topilmadi"},
-                status=status.HTTP_404_NOT_FOUND
-            )
 
+        if not patient:
+            return self.create_profile(request)
         serializer = self.get_serializer(patient, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+
+        # created_by ni saqlash
+        if not patient.created_by:
+            patient.created_by = request.user
+
         serializer.save()
 
-        # History yozish
-        PatientHistory.objects.create(
-            patient=patient,
-            author=request.user,
-            comment="👤 Profil ma'lumotlari yangilandi"
-        )
+        # History
+        try:
+            PatientHistory.objects.create(
+                patient=patient,
+                author=request.user,
+                comment="Profil ma'lumotlari yangilandi (PATCH)"
+            )
+        except:
+            pass
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="Profilni to'liq yangilash",
+        request_body=PatientProfileSerializer,
+        responses={
+            200: PatientProfileSerializer(),
+            201: "Yangi profil yaratildi",
+            400: "Validation xatosi",
+            401: "JWT token xatosi"
+        },
+        tags=["me-profile"]
+    )
+    def put(self, request, *args, **kwargs):
+        """Profilni to'liq yangilash"""
+        patient = self.get_object()
+
+        if not patient:
+            # Profil yo'q - yangi yaratish
+            return self.create_profile(request)
+
+        # Mavjud profilni yangilash
+        serializer = self.get_serializer(patient, data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # created_by ni saqlash
+        if not patient.created_by:
+            patient.created_by = request.user
+
+        serializer.save()
+
+        # History
+        try:
+            PatientHistory.objects.create(
+                patient=patient,
+                author=request.user,
+                comment="Profil ma'lumotlari yangilandi (PUT)"
+            )
+        except:
+            pass
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def create_profile(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        patient = serializer.save(created_by=request.user)
+        if not patient.phone_number and hasattr(request.user, 'phone_number'):
+            patient.phone_number = request.user.phone_number
+            patient.save()
+
+        # History
+        try:
+            PatientHistory.objects.create(
+                patient=patient,
+                author=request.user,
+                comment="Yangi profil yaratildi"
+            )
+        except:
+            pass
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
