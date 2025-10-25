@@ -1,3 +1,4 @@
+# applications/views.py
 from django.db import models
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, viewsets, status, permissions
@@ -6,6 +7,8 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.decorators import api_view, permission_classes as dp_classes, permission_classes
+from django.db.models import Count, Q
 from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -16,22 +19,34 @@ from .serializers import (
     DocumentSerializer,
     CompletedApplicationSerializer,
 )
-
 from patients.models import Patient
 from core.models import Stage
 
+
 # ===============================================================
-# 🩺 APPLICATIONS – Yangi va jarayondagi murojaatlar
+# PAGINATION - ApplicationViewSet uchun
+# ===============================================================
+class ApplicationListPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+# ===============================================================
+# 🩺 APPLICATIONS VIEWSET - ASOSIY
 # ===============================================================
 class ApplicationViewSet(viewsets.ModelViewSet):
     """
     🩺 Arizalar bilan ishlovchi asosiy API
     - Bemor o'zi yaratgan arizalarni ko'radi
     - Operator barcha arizalarni boshqaradi
-    - Filter: status, sana (bitta), klinika nomi, stage, patient_id
+    - Filter: status, sana, klinika, stage, patient_id
+    - Pagination: 10 items per page
     """
     queryset = Application.objects.filter(is_archived=False).select_related("patient", "stage")
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]  # ✅ File upload uchun
+    pagination_class = ApplicationListPagination  # ✅ PAGINATION
 
     def get_serializer_class(self):
         if self.action in ["create", "update", "partial_update"]:
@@ -48,16 +63,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             if patient:
                 qs = qs.filter(patient=patient)
 
-        return qs.prefetch_related("documents", "history")
+        return qs.prefetch_related("documents")
 
-    # 📋 Arizalar ro'yxatini olish
     @swagger_auto_schema(
-        operation_summary="📋 Arizalar ro'yxatini olish (status va sana bo'yicha filter bilan)",
+        operation_summary="📋 Arizalar ro'yxati (filter + pagination)",
         operation_description=(
                 "Arizalarni holati yoki sana bo'yicha filtrlash mumkin. "
                 "`status` (new, in_progress, completed, rejected), "
                 "`date` formati: YYYY-MM-DD, "
-                "`patient_id` bemor ID bo'yicha filter"
+                "`patient_id` bemor ID bo'yicha filter. "
+                "Pagination: 10 items per page (page, page_size params)"
         ),
         manual_parameters=[
             openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
@@ -66,9 +81,13 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                               enum=["all", "new", "in_progress", "completed", "rejected"],
                               description="Ariza holati bo'yicha filter"),
             openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Aynan shu sanada yaratilgan murojaatlar (YYYY-MM-DD)"),
+                              description="Aynan shu sanada yaratilgan (YYYY-MM-DD)"),
             openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
                               description="Bemor ID bo'yicha filter"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifa raqami"),
+            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifadagi elementlar soni (max 100)"),
         ],
         responses={200: ApplicationSerializer(many=True)},
         tags=["applications"]
@@ -76,7 +95,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
 
-        # 🔍 Qidiruv (bemor yoki klinika bo'yicha)
+        # 🔍 Qidiruv
         search = request.query_params.get("search")
         if search:
             qs = qs.filter(
@@ -84,19 +103,36 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 | models.Q(patient__full_name__icontains=search)
             )
 
+        # ⚙️ Status filter
         status_filter = request.query_params.get("status")
         if status_filter and status_filter.lower() != "all":
             qs = qs.filter(status=status_filter.lower())
+
+        # 📅 Sana filter
         filter_date = request.query_params.get("date")
         if filter_date:
             qs = qs.filter(created_at__date=filter_date)
+
+        # 👤 Patient ID filter
         patient_id = request.query_params.get("patient_id")
         if patient_id:
             qs = qs.filter(patient__id=patient_id)
 
-        serializer = self.get_serializer(qs.order_by("-created_at"), many=True)
+        # ✅ PAGINATION
+        qs = qs.order_by("-created_at")
+        page = self.paginate_queryset(qs)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+
+# ===============================================================
+# 👤 PATIENT ID BO'YICHA ARIZALAR
+# ===============================================================
 class ApplicationPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
@@ -104,13 +140,18 @@ class ApplicationPagination(PageNumberPagination):
 
 
 class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    👤 Bemorning barcha arizalarini ko'rish
+    - GET /applications/patient/{patient_id}/ - Arizalar
+    - Filter: status, search, date
+    - Pagination
+    """
     serializer_class = ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = ApplicationPagination
     lookup_field = 'pk'
 
     def get_queryset(self):
-        # ✅ PATH'dan olish (URLconf'dan)
         patient_id = self.kwargs.get('patient_id')
 
         if not patient_id:
@@ -128,34 +169,17 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return context
 
     @swagger_auto_schema(
-        operation_summary="Bemorning barcha arizalari",
+        operation_summary="👤 Bemorning arizalari",
+        operation_description="Bemor ID bo'yicha barcha arizalar (pagination bilan)",
         manual_parameters=[
-            openapi.Parameter(
-                'status',
-                openapi.IN_QUERY,
-                type=openapi.TYPE_STRING,
-                description="Status filter (new, in_progress, completed, rejected, all)",
-                required=False
-            ),
-            openapi.Parameter(
-                'page',
-                openapi.IN_QUERY,
-                type=openapi.TYPE_INTEGER,
-                description="Sahifa raqami",
-                required=False
-            ),
-            openapi.Parameter(
-                'page_size',
-                openapi.IN_QUERY,
-                type=openapi.TYPE_INTEGER,
-                description="Sahifadagi elementlar soni (max 100)",
-                required=False
-            ),
+            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              description="Status filter (new, in_progress, completed, rejected, all)"),
+            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifa raqami"),
+            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
+                              description="Sahifadagi elementlar soni (max 100)"),
         ],
-        responses={
-            200: ApplicationSerializer(many=True),
-            404: "Bemor topilmadi"
-        },
+        responses={200: ApplicationSerializer(many=True)},
         tags=["patient-applications"]
     )
     def list(self, request, patient_id=None):
@@ -164,9 +188,10 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
                 {"detail": "Patient ID topilmadi"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
         queryset = self.get_queryset()
+
         if not queryset.exists():
-            from patients.models import Patient
             if not Patient.objects.filter(id=patient_id).exists():
                 return Response(
                     {"detail": f"Bemor ID {patient_id} topilmadi"},
@@ -182,77 +207,37 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
                     },
                     status=status.HTTP_200_OK
                 )
-        status_param = request.query_params.get('status', 'all')
-        if status_param and status_param != 'all':
-            queryset = queryset.filter(status=status_param)
+
+        # Status filter
+        status_filter = request.query_params.get('status')
+        if status_filter and status_filter.lower() != 'all':
+            queryset = queryset.filter(status=status_filter.lower())
+
+        # Pagination
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data)
 
-    @swagger_auto_schema(
-        operation_summary="Bemorning bitta arizasi",
-        operation_description="""
-        Bemorning bitta arizasi - to'liq ma'lumotlar.
 
-        URL: GET /api/applications/patient/{patient_id}/{pk}/
-        Masalan: GET /api/applications/patient/19/39/
-        """,
-        responses={
-            200: ApplicationSerializer(),
-            404: "Ariza topilmadi"
-        },
-        tags=["patient-applications"]
-    )
-    def retrieve(self, request, patient_id=None, pk=None):
-        if not patient_id or not pk:
-            return Response(
-                {"detail": "Patient ID va Application ID majburiy"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        try:
-            application = Application.objects.select_related(
-                'patient',
-                'stage'
-            ).prefetch_related(
-                'documents'
-            ).get(
-                pk=pk,
-                patient_id=patient_id,
-                is_archived=False
-            )
-
-            serializer = self.get_serializer(application)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-
-        except Application.DoesNotExist:
-            return Response(
-                {"detail": f"Ariza ID {pk} bemor ID {patient_id} uchun topilmadi"},
-                status=status.HTTP_404_NOT_FOUND
-            )
 # ===============================================================
-# 📎 HUJJATLAR (Documents)
+# 📄 DOCUMENT UPLOAD - UploadApplicationDocumentView
 # ===============================================================
-class DocumentListCreateView(generics.ListCreateAPIView):
+class UploadApplicationDocumentView(generics.CreateAPIView):
     """
-    📂 Arizaga biriktirilgan hujjatlar bilan ishlaydi
-    - GET → Hujjatlar ro'yxatini olish
-    - POST → Fayl yuklash (PDF, JPG, PNG)
+    ✅ Arizaga hujjat yuklash
+
+    POST /applications/{application_id}/documents/
     """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    def get_queryset(self):
-        app_id = self.kwargs.get("application_id")
-        return Document.objects.filter(application__id=app_id)
-
     @swagger_auto_schema(
-        operation_summary="📎 Arizaga hujjat yuklash",
-        operation_description="PDF, JPG, PNG formatlarini yuklash uchun API.",
+        operation_summary="📄 Arizaga hujjat yuklash",
         consumes=["multipart/form-data"],
         manual_parameters=[
             openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True,
@@ -269,7 +254,78 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         app_id = self.kwargs.get("application_id")
         application = get_object_or_404(Application, id=app_id)
         serializer.save(application=application, uploaded_by=request.user)
-        ApplicationHistory.objects.create(application=application, author=request.user, comment="📄 Hujjat yuklandi")
+
+        try:
+            ApplicationHistory.objects.create(
+                application=application,
+                author=request.user,
+                comment="📄 Hujjat yuklandi"
+            )
+        except:
+            pass
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+# ===============================================================
+# 📄 DOCUMENT LIST/CREATE VIEW - DocumentListCreateView
+# ===============================================================
+class DocumentListCreateView(generics.ListCreateAPIView):
+    """
+    ✅ Arizaning hujjatlari ro'yxati va yangi hujjat yuklash
+
+    GET /applications/{application_id}/documents/ - Hujjatlar ro'yxati
+    POST /applications/{application_id}/documents/ - Yangi hujjat yuklash
+    """
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        """Arizaning hujjatlarini olish"""
+        application_id = self.kwargs.get('application_id')
+        return Document.objects.filter(application_id=application_id).order_by('-uploaded_at')
+
+    @swagger_auto_schema(
+        operation_summary="📄 Arizaning hujjatlari ro'yxati",
+        responses={200: DocumentSerializer(many=True)},
+        tags=["applications"]
+    )
+    def get(self, request, *args, **kwargs):
+        """Hujjatlar ro'yxati"""
+        return super().get(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="📄 Arizaga hujjat yuklash",
+        consumes=["multipart/form-data"],
+        manual_parameters=[
+            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True,
+                              description="Fayl (PDF/JPG/PNG)"),
+            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING,
+                              description="Tavsif")
+        ],
+        responses={201: DocumentSerializer},
+        tags=["applications"]
+    )
+    def post(self, request, *args, **kwargs):
+        """Yangi hujjat yuklash"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        application_id = self.kwargs.get('application_id')
+        application = get_object_or_404(Application, id=application_id)
+
+        serializer.save(application=application, uploaded_by=request.user)
+
+        try:
+            ApplicationHistory.objects.create(
+                application=application,
+                author=request.user,
+                comment="📄 Hujjat yuklandi"
+            )
+        except:
+            pass
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
@@ -281,7 +337,7 @@ class ChangeApplicationStageView(APIView):
 
     @swagger_auto_schema(
         operation_summary="🔁 Bosqichni o'zgartirish",
-        operation_description="Yangi Stage ID va izoh yuboriladi.",
+        operation_description="Yangi Stage ID va izoh yuboriladi",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["new_stage_id"],
@@ -290,24 +346,34 @@ class ChangeApplicationStageView(APIView):
                 "comment": openapi.Schema(type=openapi.TYPE_STRING),
             },
         ),
-        responses={200: openapi.Response("Bosqich muvaffaqiyatli o'zgartirildi")},
+        responses={200: openapi.Response("Bosqich o'zgartirildi")},
         tags=["applications"],
     )
     def patch(self, request, application_id):
         if getattr(request.user, "role", "") == "patient":
-            raise PermissionDenied("Sizda bosqichni o'zgartirishga ruxsat yo'q.")
+            raise PermissionDenied("Sizda ruxsat yo'q")
+
         app = get_object_or_404(Application, id=application_id)
         new_stage = get_object_or_404(Stage, id=request.data.get("new_stage_id"))
         old_stage = app.stage
         app.stage = new_stage
         app.save(update_fields=["stage", "updated_at"])
-        comment = request.data.get("comment") or f"Bosqich '{old_stage}' → '{new_stage}' ga o'zgartirildi"
-        ApplicationHistory.objects.create(application=app, author=request.user, comment=comment)
+
+        comment = request.data.get("comment") or f"Bosqich '{old_stage}' → '{new_stage}'"
+        try:
+            ApplicationHistory.objects.create(
+                application=app,
+                author=request.user,
+                comment=comment
+            )
+        except:
+            pass
+
         return Response({"success": True, "new_stage": new_stage.title})
 
 
 # ===============================================================
-# ✅ OPERATOR PANELI – BAJARILGAN MUROJAATLAR
+# ✅ COMPLETED APPLICATIONS - OPERATOR PANELI
 # ===============================================================
 class CompletedApplicationPagination(PageNumberPagination):
     page_size = 10
@@ -317,7 +383,7 @@ class CompletedApplicationPagination(PageNumberPagination):
 
 class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    🧾 Tugatilgan yoki rad etilgan murojaatlar (Operator uchun)
+    🧾 Tugatilgan yoki rad etilgan arizalar
     """
     serializer_class = CompletedApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -327,9 +393,9 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         qs = Application.objects.filter(
             status__in=["completed", "rejected"],
             is_archived=False
-        ).select_related("patient", "stage").prefetch_related("documents", "history")
+        ).select_related("patient", "stage").prefetch_related("documents")
 
-        # 🔍 Qidiruv (bemor yoki klinika)
+        # 🔍 Qidiruv
         search = self.request.query_params.get("search")
         if search:
             qs = qs.filter(
@@ -342,12 +408,12 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         if status_filter and status_filter.lower() != "all":
             qs = qs.filter(status=status_filter.lower())
 
-        # 📅 Sana bo'yicha filter
+        # 📅 Sana filter
         filter_date = self.request.query_params.get("date")
         if filter_date:
             qs = qs.filter(created_at__date=filter_date)
 
-        # 👤 Patient ID bo'yicha filter
+        # 👤 Patient ID filter
         patient_id = self.request.query_params.get("patient_id")
         if patient_id:
             qs = qs.filter(patient__id=patient_id)
@@ -355,21 +421,18 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return qs.order_by("-created_at")
 
     @swagger_auto_schema(
-        operation_summary="🧾 Tugatilgan yoki rad etilgan murojaatlar ro'yxati",
-        operation_description="Operator paneli uchun tugatilgan va rad etilgan murojaatlar (search, status, date, patient_id filter bilan). Paginatsiya qo'llab-quvvatlanadi.",
+        operation_summary="🧾 Tugatilgan/rad etilgan arizalar",
+        operation_description="Operator paneli uchun",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, description="Bemor yoki klinika bo'yicha qidirish",
+            openapi.Parameter("search", openapi.IN_QUERY, description="Bemor/klinika bo'yicha",
                               type=openapi.TYPE_STRING),
             openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              enum=["all", "completed", "rejected"], description="Status bo'yicha filter"),
+                              enum=["all", "completed", "rejected"]),
             openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Sana bo'yicha filter (YYYY-MM-DD)"),
-            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Bemor ID bo'yicha filter"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifa raqami"),
-            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifadagi elementlar soni (max 100)"),
+                              description="Sana (YYYY-MM-DD)"),
+            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
         ],
         responses={200: CompletedApplicationSerializer(many=True)},
         tags=["applications"],
@@ -386,14 +449,13 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_summary="📄 Bitta tugatilgan yoki rad etilgan murojaat (id orqali)",
-        operation_description="Tugatilgan yoki rad etilgan murojaat tafsilotlarini olish uchun ishlatiladi.",
+        operation_summary="📄 Bitta tugatilgan ariza",
         responses={200: CompletedApplicationSerializer()},
         tags=["applications"],
     )
     def retrieve(self, request, *args, **kwargs):
         app = get_object_or_404(
-            Application.objects.select_related("patient", "stage").prefetch_related("documents", "history"),
+            Application.objects.select_related("patient", "stage").prefetch_related("documents"),
             id=kwargs.get("pk"),
             status__in=["completed", "rejected"]
         )
@@ -402,7 +464,7 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # ===============================================================
-# 🧾 STATUSNI O'ZGARTIRISH (Tugatish / Rad etish)
+# 🧾 STATUSNI O'ZGARTIRISH
 # ===============================================================
 class ChangeApplicationStatusView(generics.UpdateAPIView):
     queryset = Application.objects.all()
@@ -410,7 +472,7 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="🧾 Arizani 'Tugatilgan' yoki 'Rad etilgan' deb belgilash",
+        operation_summary="🧾 Status o'zgartirish (completed/rejected)",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["status"],
@@ -426,13 +488,85 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
         app_id = kwargs.get("application_id")
         app = get_object_or_404(Application, id=app_id)
         new_status = request.data.get("status")
+
         if new_status not in ["completed", "rejected"]:
-            return Response({"detail": "Noto'g'ri status qiymati"}, status=400)
+            return Response({"detail": "Noto'g'ri status"}, status=400)
 
         app.status = new_status
         app.final_conclusion = request.data.get("final_conclusion", "")
         app.updated_at = timezone.now()
         app.save(update_fields=["status", "final_conclusion", "updated_at"])
-        ApplicationHistory.objects.create(application=app, author=request.user,
-                                          comment=f"Ariza {new_status.upper()} deb belgilandi")
+
+        try:
+            ApplicationHistory.objects.create(
+                application=app,
+                author=request.user,
+                comment=f"Ariza {new_status.upper()} deb belgilandi"
+            )
+        except:
+            pass
+
         return Response({"success": True, "status": new_status}, status=200)
+
+
+# ===============================================================
+# ✅ YANGI - STATISTICS API
+# ===============================================================
+@swagger_auto_schema(
+    method='get',
+    operation_summary="📊 Arizalar statistikasi",
+    operation_description="""
+    ✅ YANGI API - Operator uchun:
+    - Jami arizalar
+    - Yangi arizalar
+    - Jarayondagi arizalar
+    - Yakunlangan arizalar
+    - Rad etilgan arizalar
+    """,
+    responses={
+        200: openapi.Response(
+            'Success',
+            openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'jami': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'yangi': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'jarayonda': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'yakunlangan': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'rad_etilgan': openapi.Schema(type=openapi.TYPE_INTEGER),
+                }
+            )
+        )
+    },
+    tags=["statistics"]
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def application_statistics(request):
+    """
+    ✅ TO'G'RILANGAN - Arizalar statistikasi
+
+    GET /api/applications/statistics/
+    """
+    try:
+        # ✅ aggregate() ishlatish
+        stats = Application.objects.aggregate(
+            jami=Count('id'),
+            yangi=Count('id', filter=Q(status='new')),
+            jarayonda=Count('id', filter=Q(status='in_progress')),
+            yakunlangan=Count('id', filter=Q(status='completed')),
+            rad_etilgan=Count('id', filter=Q(status='rejected')),
+        )
+
+        return Response(stats, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        # Debug
+        import traceback
+        print(f"Statistics xatosi: {str(e)}")
+        print(traceback.format_exc())
+
+        return Response(
+            {'detail': f'Xato: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
