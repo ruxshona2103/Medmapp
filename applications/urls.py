@@ -1,6 +1,6 @@
 # applications/urls.py
 # ===============================================================
-# APPLICATIONS URLS - PATH PARAM TO'G'RI KONFIGURATSIYA
+# APPLICATIONS URLS - TO'G'RI TARTIB (MUHIM!)
 # ===============================================================
 
 from django.urls import path, include
@@ -12,6 +12,7 @@ from .views import (
     DocumentListCreateView,
     ChangeApplicationStageView,
     ChangeApplicationStatusView,
+    application_statistics,
 )
 
 # ===============================================================
@@ -19,45 +20,44 @@ from .views import (
 # ===============================================================
 router = DefaultRouter()
 router.register(r'applications', ApplicationViewSet, basename='application')
-router.register(r'completed-applications', CompletedApplicationViewSet, basename='completed-application')
+router.register(r'completed-applications', CompletedApplicationViewSet, basename='completed-applications')
 
 # ===============================================================
-# URL PATTERNS
+# URL PATTERNS - MUHIM: TARTIB TO'G'RI BO'LISHI KERAK!
 # ===============================================================
 urlpatterns = [
-    # Router URLs
-    path('', include(router.urls)),
+    # ✅ 1. AVVAL - Maxsus pathlar (router'dan oldin)
 
-    # ============================================================
-    # 👤 PATIENT APPLICATIONS - PATH PARAM
-    # ============================================================
-    # ✅ TO'G'RI URL pattern:
-    # GET /api/applications/patient/19/        → List
-    # GET /api/applications/patient/19/39/     → Retrieve
+    # Statistics - ✅ ROUTER'DAN OLDIN!
+    path('applications/statistics/',
+         application_statistics,
+         name='application-statistics'),
 
+    # Patient applications - LIST
     path('applications/patient/<int:patient_id>/',
          PatientApplicationViewSet.as_view({'get': 'list'}),
          name='patient-applications-list'),
 
+    # Patient applications - RETRIEVE
     path('applications/patient/<int:patient_id>/<int:pk>/',
          PatientApplicationViewSet.as_view({'get': 'retrieve'}),
          name='patient-applications-detail'),
 
-    # ============================================================
-    # 📎 DOCUMENTS
-    # ============================================================
+    # Documents
     path('applications/<int:application_id>/documents/',
          DocumentListCreateView.as_view(),
          name='application-documents'),
 
-    # ============================================================
-    # 🏷️ STAGE VA STATUS
-    # ============================================================
+    # Stage change
     path('applications/<int:application_id>/change-stage/',
          ChangeApplicationStageView.as_view(),
          name='change-application-stage'),
 
+    # Status change
     path('applications/<int:application_id>/change-status/',
          ChangeApplicationStatusView.as_view(),
          name='change-application-status'),
+
+    # ✅ 2. KEYIN - Router (oxirida)
+    path('', include(router.urls)),
 ]
