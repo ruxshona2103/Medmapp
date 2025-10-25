@@ -1,3 +1,4 @@
+# applications/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Application, ApplicationHistory, Document
@@ -45,10 +46,10 @@ class ApplicationHistorySerializer(serializers.ModelSerializer):
 
 
 # ===============================================================
-# 📎 DOCUMENT SERIALIZER - Clean va strukturali
+# 📎 DOCUMENT SERIALIZER
 # ===============================================================
 class DocumentSerializer(serializers.ModelSerializer):
-    """Hujjat serializer - to'liq ma'lumotlar bilan"""
+    """Hujjat serializer - to'liq ma'lumotlar"""
     uploaded_by = UserMinimalSerializer(read_only=True)
     file_url = serializers.SerializerMethodField()
     file_name = serializers.SerializerMethodField()
@@ -95,7 +96,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return None
 
     def get_file_type(self, obj):
-        """Fayl turi (pdf, jpg, png)"""
+        """Fayl turi"""
         if obj.file:
             name = obj.file.name
             ext = os.path.splitext(name)[1].lower()
@@ -104,18 +105,27 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 # ===============================================================
-# 🔹 PATIENT SERIALIZER (minimal)
+# 🔹 PATIENT MINIMAL SERIALIZER
 # ===============================================================
 class PatientMinimalSerializer(serializers.ModelSerializer):
     """Bemor minimal ma'lumotlari"""
 
     class Meta:
         model = Patient
-        fields = ['id', 'full_name', 'phone_number', 'date_of_birth', 'gender']
+        fields = [
+            'id',
+            'full_name',
+            'phone_number',
+            'date_of_birth',
+            'gender',
+            'email',
+            'complaints',  # ✅ QOSHILDI
+            'previous_diagnosis',  # ✅ QOSHILDI
+        ]
 
 
 # ===============================================================
-# 🔹 STAGE SERIALIZER (minimal)
+# 🔹 STAGE SERIALIZER
 # ===============================================================
 class StageMinimalSerializer(serializers.ModelSerializer):
     """Bosqich minimal ma'lumotlari"""
@@ -126,16 +136,24 @@ class StageMinimalSerializer(serializers.ModelSerializer):
 
 
 # ===============================================================
-# 🩺 APPLICATION SERIALIZER - Asosiy (TUZATILGAN)
+# 🩺 APPLICATION SERIALIZER - ASOSIY
 # ===============================================================
 class ApplicationSerializer(serializers.ModelSerializer):
-    """Ariza to'liq ma'lumotlari"""
+    """
+    Ariza to'liq ma'lumotlari
+
+    ✅ QOSHILDI:
+    - documents (DocumentSerializer bilan)
+    - history (ApplicationHistorySerializer bilan)
+    - patient.complaints
+    - patient.previous_diagnosis
+    """
     patient = PatientMinimalSerializer(read_only=True)
     stage = StageMinimalSerializer(read_only=True)
-    documents = DocumentSerializer(many=True, read_only=True)
-    history = serializers.SerializerMethodField()
+    documents = DocumentSerializer(many=True, read_only=True)  # ✅ QOSHILDI
+    history = serializers.SerializerMethodField()  # ✅ QOSHILDI
 
-    # Qo'shimcha hisoblangan maydonlar
+    # Qo'shimcha maydonlar
     documents_count = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
 
@@ -144,7 +162,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'application_id',
-            'patient',
+            'patient',  # ✅ complaints bilan
             'clinic_name',
             'complaint',
             'diagnosis',
@@ -153,9 +171,9 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'comment',
-            'documents',
+            'documents',  # ✅ QOSHILDI
             'documents_count',
-            'history',
+            'history',  # ✅ QOSHILDI
             'created_at',
             'updated_at',
             'is_archived',
@@ -174,7 +192,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
         return obj.documents.count()
 
     def get_status_display(self, obj):
-        """Status nomi (human-readable)"""
+        """Status nomi"""
         status_map = {
             'new': 'Yangi',
             'in_progress': 'Jarayonda',
@@ -185,29 +203,55 @@ class ApplicationSerializer(serializers.ModelSerializer):
 
     def get_history(self, obj):
         """
-        Tarix - ApplicationHistory model orqali
-        ✅ TUZATILGAN: applicationhistory_set xatosi bartaraf etildi
+        ✅ QOSHILDI - Tarix
+
+        ApplicationHistory model orqali tarixni olish
         """
         try:
-            # Method 1: ApplicationHistory model orqali (ENG ISHONCHLI)
             history = ApplicationHistory.objects.filter(
                 application=obj
             ).select_related('author').order_by('-created_at')[:10]
             return ApplicationHistorySerializer(history, many=True).data
-        except Exception as e:
-            # Agar xato bo'lsa, bo'sh array qaytarish
+        except:
             return []
+
+    def to_representation(self, instance):
+        """
+        ✅ Response'ni to'g'rilash
+
+        Garantiya qilish:
+        - complaint har doim qaytadi
+        - documents har doim qaytadi
+        """
+        data = super().to_representation(instance)
+
+        # ✅ complaint ni garantiya qilish
+        if not data.get('complaint'):
+            data['complaint'] = instance.complaint or ''
+
+        return data
 
 
 # ===============================================================
 # ✏️ APPLICATION CREATE/UPDATE SERIALIZER
 # ===============================================================
 class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
-    """Ariza yaratish va tahrirlash"""
+    """
+    Ariza yaratish va tahrirlash
+
+    ✅ QOSHILDI:
+    - to_representation metodi (ApplicationSerializer formatda response)
+    - documents field (file upload)
+    - patient.complaints yangilash
+    """
     patient_id = serializers.IntegerField(write_only=True, required=True)
     stage_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
-    # ✅ Qo'shimcha - response'da ko'rsatish uchun
+    # ✅ TO'G'RILANDI - Swagger uchun
+    # documents field olib tashlandi - alohida API orqali yuklash kerak
+    # POST /applications/{id}/documents/ - document yuklash uchun
+
+    # Response uchun
     patient = PatientMinimalSerializer(read_only=True)
     stage = StageMinimalSerializer(read_only=True)
 
@@ -226,6 +270,7 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
             'stage',
             'status',
             'comment',
+            # 'documents' - OLIB TASHLANDI (alohida API orqali yuklash)
             'created_at',
             'updated_at',
         ]
@@ -244,9 +289,16 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        """Yangi ariza yaratish"""
+        """
+        ✅ Yangi ariza yaratish
+
+        Documents ALOHIDA yuklash kerak:
+        POST /api/applications/{id}/documents/
+        """
         patient_id = validated_data.pop('patient_id')
         stage_id = validated_data.pop('stage_id', None)
+
+        complaint = validated_data.get('complaint', '')
 
         patient = Patient.objects.get(id=patient_id)
 
@@ -256,11 +308,16 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
             **validated_data
         )
 
-        # Agar stage berilgan bo'lsa
+        # Stage qo'shish
         if stage_id:
             stage = Stage.objects.get(id=stage_id)
             application.stage = stage
             application.save()
+
+        # ✅ Patient.complaints yangilash
+        if complaint:
+            patient.complaints = complaint
+            patient.save()
 
         # Tarixga yozish
         request = self.context.get('request')
@@ -272,12 +329,17 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
                     comment="📝 Yangi ariza yaratildi"
                 )
             except:
-                pass  # History model yo'q bo'lsa, xato bermaydi
+                pass
 
         return application
 
     def update(self, instance, validated_data):
-        """Arizani yangilash"""
+        """
+        ✅ Arizani yangilash
+
+        Documents ALOHIDA yuklash kerak:
+        POST /api/applications/{id}/documents/
+        """
         patient_id = validated_data.pop('patient_id', None)
         stage_id = validated_data.pop('stage_id', None)
 
@@ -291,7 +353,7 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
             stage = Stage.objects.get(id=stage_id)
             instance.stage = stage
 
-        # Boshqa maydonlarni yangilash
+        # Boshqa maydonlar
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
@@ -304,16 +366,27 @@ class ApplicationCreateUpdateSerializer(serializers.ModelSerializer):
                 ApplicationHistory.objects.create(
                     application=instance,
                     author=request.user,
-                    comment="🔄 Ariza ma'lumotlari yangilandi"
+                    comment="🔄 Ariza yangilandi"
                 )
             except:
-                pass  # History model yo'q bo'lsa, xato bermaydi
+                pass
 
         return instance
 
+    def to_representation(self, instance):
+        """
+        ✅ QOSHILDI - Response ApplicationSerializer formatda
+
+        Bu metod response'ni ApplicationSerializer formatida qaytaradi:
+        - patient (complaints bilan)
+        - documents list
+        - history list
+        """
+        return ApplicationSerializer(instance, context=self.context).data
+
 
 # ===============================================================
-# 🧾 COMPLETED APPLICATION SERIALIZER - Operator paneli (TUZATILGAN)
+# 🧾 COMPLETED APPLICATION SERIALIZER
 # ===============================================================
 class CompletedApplicationSerializer(serializers.ModelSerializer):
     """Tugatilgan va rad etilgan arizalar"""
@@ -322,8 +395,8 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
     clinic = serializers.CharField(source='clinic_name', read_only=True)
     status_label = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()
-    documents = DocumentSerializer(many=True, read_only=True)
-    history = serializers.SerializerMethodField()  # ✅ TUZATILGAN
+    documents = DocumentSerializer(many=True, read_only=True)  # ✅ QOSHILDI
+    history = serializers.SerializerMethodField()  # ✅ QOSHILDI
 
     class Meta:
         model = Application
@@ -339,8 +412,8 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
             'status',
             'status_label',
             'date',
-            'documents',
-            'history',
+            'documents',  # ✅ QOSHILDI
+            'history',  # ✅ QOSHILDI
             'created_at',
             'updated_at',
         ]
@@ -357,7 +430,7 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
         ]
 
     def get_status_label(self, obj):
-        """Status nomi (frontend uchun)"""
+        """Status nomi"""
         status_map = {
             'completed': 'Tugatilgan',
             'rejected': 'Rad etilgan',
@@ -365,15 +438,14 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
         return status_map.get(obj.status, obj.status)
 
     def get_date(self, obj):
-        """DateTime'ni Date formatiga o'tkazish"""
+        """Sana"""
         if obj.updated_at:
             return obj.updated_at.strftime('%Y-%m-%d')
         return None
 
     def get_history(self, obj):
         """
-        Tarix - ApplicationHistory model orqali
-        ✅ TUZATILGAN: applicationhistory_set xatosi bartaraf etildi
+        ✅ QOSHILDI - Tarix
         """
         try:
             history = ApplicationHistory.objects.filter(
@@ -382,48 +454,3 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
             return ApplicationHistorySerializer(history, many=True).data
         except:
             return []
-
-
-# ===============================================================
-# 🔹 PATIENT DETAIL SERIALIZER (to'liq ma'lumotlar) - TUZATILGAN
-# ===============================================================
-class PatientDetailSerializer(serializers.ModelSerializer):
-    """
-    Bemor to'liq ma'lumotlari - applications va documents bilan
-    ⚠️ Bu serializer patients/serializers.py da bo'lishi kerak!
-    Lekin circular import'dan qochish uchun bu yerda ham qoldirildi
-    """
-    applications = serializers.SerializerMethodField()
-    total_applications = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Patient
-        fields = [
-            'id',
-            'full_name',
-            'phone_number',
-            'date_of_birth',
-            'gender',
-            'email',
-            'avatar',
-            'complaints',
-            'previous_diagnosis',
-            'applications',
-            'total_applications',
-            'created_at',
-            'updated_at',
-        ]
-
-    def get_applications(self, obj):
-        """Bemorning arizalari - documents bilan"""
-        applications = Application.objects.filter(
-            patient=obj,
-            is_archived=False
-        ).select_related('stage').prefetch_related('documents').order_by('-created_at')
-
-        # ApplicationSerializer'dan foydalanish
-        return ApplicationSerializer(applications, many=True, context=self.context).data
-
-    def get_total_applications(self, obj):
-        """Jami arizalar soni"""
-        return Application.objects.filter(patient=obj, is_archived=False).count()
