@@ -1,5 +1,8 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import viewsets, status, permissions, generics
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -804,3 +807,87 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
             pass
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary="📊 Bemorlar statistikasi",
+    operation_description="""
+    ✅ Operator uchun statistika:
+    - Jami bemorlar
+    - Yangi bemorlar (oxirgi 7 kun)
+    - Faol bemorlar (arizalari bor)
+    - Erkak bemorlar
+    - Ayol bemorlar
+    """,
+    responses={
+        200: openapi.Response(
+            'Success',
+            openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'jami_bemorlar': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'yangi_bemorlar': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'faol_bemorlar': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'erkak': openapi.Schema(type=openapi.TYPE_INTEGER),
+                    'ayol': openapi.Schema(type=openapi.TYPE_INTEGER),
+                }
+            )
+        )
+    },
+    tags=["statistics"]
+)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def patient_statistics(request):
+    """
+    ✅ TO'G'RILANGAN - Bemorlar statistikasi
+
+    GET /api/patients/statistics/
+    """
+    try:
+        # ✅ 1. Jami bemorlar
+        jami_bemorlar = Patient.objects.count()
+
+        # ✅ 2. Yangi bemorlar (oxirgi 7 kun)
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        yangi_bemorlar = Patient.objects.filter(
+            created_at__gte=seven_days_ago
+        ).count()
+
+        # ✅ 3. Faol bemorlar (arizalari bor) - TO'G'RILANDI
+        try:
+            from applications.models import Application
+
+            # TO'G'RI usul - subquery
+            faol_bemorlar = Patient.objects.filter(
+                id__in=Application.objects.values_list('patient_id', flat=True).distinct()
+            ).count()
+
+        except Exception as app_error:
+            print(f"Application model xatosi: {app_error}")
+            faol_bemorlar = 0
+
+        # ✅ 4. Jins bo'yicha statistika
+        erkak = Patient.objects.filter(gender='male').count()
+        ayol = Patient.objects.filter(gender='female').count()
+
+        return Response({
+            'jami_bemorlar': jami_bemorlar,
+            'yangi_bemorlar': yangi_bemorlar,
+            'faol_bemorlar': faol_bemorlar,
+            'erkak': erkak,
+            'ayol': ayol,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        import traceback
+        print(f"Statistics xatosi: {str(e)}")
+        print(traceback.format_exc())
+
+        return Response(
+            {'detail': f'Xato: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
