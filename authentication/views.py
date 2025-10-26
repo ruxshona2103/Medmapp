@@ -271,20 +271,25 @@ class OperatorTokenRefreshView(TokenRefreshView):
 # PARTNER LOGIN
 # ===============================================================
 class PartnerLoginView(TokenObtainPairView):
+    """
+    Partner (Hamkor) login - JWT token olish
+    """
     serializer_class = PartnerLoginSerializer
+    permission_classes = [AllowAny]
 
     @swagger_auto_schema(
         operation_summary="🔐 Partner Login",
         operation_description="""
-        Hamkor uchun JWT token olish.
+        Hamkor uchun login endpoint.
 
         Credentials:
-        - phone_number: Partner telefon raqami
-        - password: Parol
+        - phone_number: +998XXXXXXXXX
+        - password: partner paroli
 
-        ✅ Faqat role='partner' bo'lgan userlar login qila oladi.
-        ✅ Partner profiliga ega bo'lishi kerak.
-        ✅ Partner faol bo'lishi kerak.
+        Returns:
+        - access: Access token (15 daqiqa)
+        - refresh: Refresh token (1 kun)
+        - user: Partner ma'lumotlari
         """,
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
@@ -293,42 +298,38 @@ class PartnerLoginView(TokenObtainPairView):
                 'phone_number': openapi.Schema(
                     type=openapi.TYPE_STRING,
                     description='Telefon raqam',
-                    example='+998901234567'
+                    example='+998999999996'
                 ),
                 'password': openapi.Schema(
                     type=openapi.TYPE_STRING,
                     description='Parol',
                     example='partner123'
                 ),
-            }
+            },
         ),
         responses={
             200: openapi.Response(
-                'Success',
-                openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'access': openapi.Schema(type=openapi.TYPE_STRING),
-                        'refresh': openapi.Schema(type=openapi.TYPE_STRING),
-                        'user': openapi.Schema(
-                            type=openapi.TYPE_OBJECT,
-                            properties={
-                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'phone_number': openapi.Schema(type=openapi.TYPE_STRING),
-                                'role': openapi.Schema(type=openapi.TYPE_STRING),
-                                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
-                                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
-                                'partner_id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'partner_name': openapi.Schema(type=openapi.TYPE_STRING),
-                                'partner_code': openapi.Schema(type=openapi.TYPE_STRING),
-                            }
-                        )
+                description='Login muvaffaqiyatli',
+                examples={
+                    'application/json': {
+                        'access': 'eyJ0eXAiOiJKV1QiLCJhbGc...',
+                        'refresh': 'eyJ0eXAiOiJKV1QiLCJhbGc...',
+                        'user': {
+                            'id': 5,
+                            'phone_number': '+998999999996',
+                            'role': 'partner',
+                            'first_name': 'Test',
+                            'last_name': 'Partner',
+                            'partner_id': 1,
+                            'partner_name': 'Test Klinika',
+                            'partner_code': 'TEST_001'
+                        }
                     }
-                )
+                }
             ),
-            401: 'Unauthorized - Noto\'g\'ri credentials, role yoki partner profili topilmadi'
+            401: 'Noto\'g\'ri credentials yoki role',
         },
-        tags=['auth-partner']
+        tags=['auth']  # ← BITTA TAG!
     )
     def post(self, request, *args, **kwargs):
         """Partner login"""
@@ -360,7 +361,7 @@ class PartnerTokenRefreshView(TokenRefreshView):
                 )
             )
         },
-        tags=['auth-partner']
+        tags=['auth']
     )
     def post(self, request, *args, **kwargs):
         """Token refresh"""
