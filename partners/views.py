@@ -1,15 +1,15 @@
 # partners/views.py
 # ===============================================================
-# HAMKOR PANEL - VIEWS
+# HAMKOR PANEL - VIEWS (code_name bilan, FINAL)
 # ===============================================================
 
 from rest_framework import viewsets, status, filters, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Q, Count, Prefetch
+from django.db.models import Count
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # PAGINATION
 # ===============================================================
 class PartnerPagination(PageNumberPagination):
-    """Hamkor panel pagination - 20 per page"""
+    """Hamkor panel pagination"""
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
@@ -47,28 +47,21 @@ class PartnerPagination(PageNumberPagination):
 # ===============================================================
 class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    Hamkor paneli - Bemorlar ViewSet
+    Hamkor paneli - Bemorlar
 
-    ✅ Faqat hamkorga biriktirilgan bemorlar
-    ✅ Faqat "HUJJATLAR" va "JAVOB XATLARI" bosqichlaridagi bemorlar
-    ✅ Maxfiy ma'lumotlar ko'rinmaydi
-
-    Features:
-    - Filter: stage, tag, search
-    - Search: full_name
-    - Pagination: 20 per page
+    TZ bo'yicha:
+    - Faqat HUJJATLAR va JAVOB_XATLARI bosqichidagi bemorlar
+    - Faqat hamkorga biriktirilgan bemorlar
+    - Maxfiy ma'lumotlar ko'rinmaydi
     """
+
     permission_classes = [IsAuthenticated, IsPartnerUser]
     pagination_class = PartnerPagination
-    filter_backends = [
-        DjangoFilterBackend,
-        filters.SearchFilter,
-        filters.OrderingFilter
-    ]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
 
     # Filters
     filterset_fields = {
-        'stage__code': ['exact'],
+        'stage__id': ['exact'],
         'tag__id': ['exact'],
         'gender': ['exact'],
     }
@@ -90,10 +83,7 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Queryset - Faqat hamkorga tegishli bemorlar
 
-        Filters:
-        1. assigned_partner = request.user.partner_profile
-        2. stage__code in ['stage_documents', 'stage_response']
-        3. is_archived = False
+        ✅ code_name ishlatish (migration kerak emas!)
         """
         user = self.request.user
 
@@ -111,74 +101,80 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         ).select_related(
             'stage', 'tag', 'assigned_partner'
         ).prefetch_related(
-            Prefetch('documents', queryset=Patient.documents.through.objects.all()),
-            Prefetch('applications', queryset=Patient.applications.through.objects.all()),
-            Prefetch('partner_responses', queryset=PartnerResponseDocument.objects.all()),
-        ).annotate(
-            applications_count=Count('applications')
+            'documents',
+            'partner_responses',
         )
 
-        # Stage filter - faqat HUJJATLAR va JAVOB_XATLARI
-        stage_codes = ['stage_documents', 'stage_response']
-        queryset = queryset.filter(stage__code__in=stage_codes)
+        # ===============================================================
+        # ✅ STAGE FILTER (code_name ishlatish)
+        # ===============================================================
+        try:
+            # TZ: HUJJATLAR va JAVOB_XATLARI
+            stage_code_names = ['DOCUMENTS', 'RESPONSE']
 
-        # Additional filters from query params
-        stage_code = self.request.query_params.get('stage')
-        if stage_code:
-            queryset = queryset.filter(stage__code=stage_code)
+            # Stage ID larini olish
+            active_stage_ids = Stage.objects.filter(
+                code_name__in=stage_code_names
+            ).values_list('id', flat=True)
 
-        tag_id = self.request.query_params.get('tag')
-        if tag_id:
-            queryset = queryset.filter(tag_id=tag_id)
+            # Bemorlarni filter qilish
+            queryset = queryset.filter(stage_id__in=active_stage_ids)
+
+        except Exception as e:
+            logger.error(f"Stage filter xatosi: {e}")
+            # Agar xato bo'lsa, hamma bemorlarni qaytarish
+            pass
 
         return queryset
 
     @swagger_auto_schema(
-        operation_summary="📋 Bemorlar ro'yxati - Hamkor paneli",
+        operation_summary="📋 Bemorlar ro'yxati",
         operation_description="""
         Hamkorga biriktirilgan bemorlar ro'yxati.
 
-        ✅ Faqat HUJJATLAR va JAVOB_XATLARI bosqichidagi bemorlar
-        ✅ Maxfiy ma'lumotlar (pasport, telefon, email) ko'rinmaydi
+        **TZ talablari:**
+        - ✅ Faqat HUJJATLAR va JAVOB_XATLARI bosqichidagi bemorlar
+        - ✅ Faqat hamkorga biriktirilgan bemorlar
+        - ✅ Maxfiy ma'lumotlar ko'rinmaydi (pasport, telefon, email)
 
-        Filters:
-        - ?stage=stage_documents - Bosqich bo'yicha
-        - ?tag=1 - Tag bo'yicha
-        - ?search=Aliyev - Ism bo'yicha qidirish
-        - ?ordering=-created_at - Saralash
+        **Filters:**
+        - `?stage=1` - Bosqich ID
+        - `?tag=2` - Tag ID
+        - `?search=Aliyev` - Ism bo'yicha qidiruv
+        - `?ordering=-created_at` - Saralash
         """,
         manual_parameters=[
-            openapi.Parameter('stage', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Bosqich kodi'),
+            openapi.Parameter('stage', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Bosqich ID'),
             openapi.Parameter('tag', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Tag ID'),
             openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, description='Qidiruv'),
         ],
         responses={200: PartnerPatientListSerializer(many=True)},
-        tags=["partner-panel"]
+        tags=['partner']
     )
     def list(self, request, *args, **kwargs):
         """Bemorlar ro'yxati"""
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="👤 Bemorning batafsil ma'lumotlari",
+        operation_summary="👤 Bemor detail",
         operation_description="""
-        Bemorning to'liq ma'lumotlari (maxfiy ma'lumotlarsiz).
+        Bemorning batafsil ma'lumotlari.
 
-        ✅ Ko'rinadi:
-        - Ism-Familiya
-        - Tibbiy ma'lumotlar (complaints, previous_diagnosis)
-        - Hujjatlar
-        - Arizalar
-        - Hamkor javoblari
+        **Ko'rinadi:**
+        - ✅ Ism-familiya
+        - ✅ Tibbiy ma'lumotlar (shikoyat, tashxis, dorilar)
+        - ✅ Yuklangan hujjatlar
 
-        ❌ Ko'rinmaydi:
-        - Pasport, telefon, email, tug'ilgan sana, manzil
+        **Ko'rinmaydi:**
+        - ❌ Pasport
+        - ❌ Telefon
+        - ❌ Email
         """,
         responses={200: PartnerPatientDetailSerializer()},
-        tags=["partner-panel"]
+        tags=['partner']
     )
     def retrieve(self, request, pk=None):
-        """Bemorning batafsil ma'lumotlari"""
+        """Bemor detail"""
         return super().retrieve(request, pk=pk)
 
     @swagger_auto_schema(
@@ -186,42 +182,57 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         operation_description="""
         Bemorning bosqichini o'zgartirish.
 
-        Masalan: "HUJJATLAR" → "JAVOB XATLARI"
+        **Request body:**
+        ```json
+        {
+          "new_stage_code_name": "RESPONSE",
+          "comment": "Tibbiy xulosa tayyor"
+        }
+        ```
 
-        Tarix:
-        - PatientHistory modeliga yoziladi
-        - author = current partner user
+        **Jarayon:**
+        1. Bemorning bosqichi o'zgaradi
+        2. Tarixga yoziladi
         """,
-        request_body=PartnerStageChangeSerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['new_stage_code_name'],
+            properties={
+                'new_stage_code_name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Yangi bosqich code_name',
+                    enum=['DOCUMENTS', 'RESPONSE', 'TRAVEL']
+                ),
+                'comment': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Izoh'
+                ),
+            },
+        ),
         responses={200: PartnerPatientDetailSerializer()},
-        tags=["partner-panel"]
+        tags=['partner']
     )
     @action(detail=True, methods=['patch'], url_path='change-stage')
     def change_stage(self, request, pk=None):
-        """
-        Bosqichni o'zgartirish
-
-        PATCH /api/v1/partner/patients/{id}/change-stage/
-
-        Body:
-        {
-          "new_stage": "stage_response",
-          "comment": "Tibbiy xulosa tayyorlandi"
-        }
-        """
+        """Bosqichni o'zgartirish"""
         patient = self.get_object()
-        serializer = PartnerStageChangeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
 
-        new_stage_code = serializer.validated_data['new_stage']
-        comment = serializer.validated_data.get('comment', '')
+        # Validate
+        new_stage_code_name = request.data.get('new_stage_code_name')
+        comment = request.data.get('comment', '')
 
-        # Stage olish
+        if not new_stage_code_name:
+            return Response(
+                {"detail": "new_stage_code_name talab qilinadi"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Stage olish (code_name bo'yicha)
         try:
-            new_stage = Stage.objects.get(code=new_stage_code)
+            new_stage = Stage.objects.get(code_name=new_stage_code_name)
         except Stage.DoesNotExist:
             return Response(
-                {"detail": f"Bosqich '{new_stage_code}' topilmadi"},
+                {"detail": f"Bosqich '{new_stage_code_name}' topilmadi"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
@@ -233,7 +244,7 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         patient.save()
 
         # Tarixga yozish
-        history_comment = comment or f"Bosqich o'zgartirildi: {old_stage.title if old_stage else 'Yoq'} → {new_stage.title}"
+        history_comment = comment or f"Bosqich: {old_stage.title if old_stage else 'Yoq'} → {new_stage.title}"
 
         try:
             PatientHistory.objects.create(
@@ -254,22 +265,62 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
     @swagger_auto_schema(
         operation_summary="📤 Javob xati yuklash",
         operation_description="""
-        Hamkor tibbiy xulosa, narxlar jadvalini yuklaydi.
+        Hamkor tibbiy xulosa va boshqa hujjatlarni yuklaydi.
 
-        Avtomatik:
-        - Bosqich "JAVOB XATLARI"ga o'tadi (agar hali o'tmagan bo'lsa)
-        - PartnerResponseDocument yaratiladi
+        **TZ talabi:**
+        - Hamkor PDF/DOC fayl yuklaydi
+        - Avtomatik bosqich "JAVOB_XATLARI" (RESPONSE) ga o'tadi
+        - Tarixga yoziladi
+
+        **Form fields:**
+        - `file` (required) - PDF/DOC/DOCX fayl
+        - `title` (optional) - "Tibbiy xulosa"
+        - `description` (optional) - Qo'shimcha izoh
+        - `document_type` (optional) - medical_report, price_list, recommendations
+
+        **Example:**
+        ```
+        file: [tibbiy_xulosa.pdf]
+        title: "Tibbiy xulosa"
+        description: "Bemor uchun tavsiyalar"
+        document_type: "medical_report"
+        ```
         """,
         consumes=["multipart/form-data"],
         manual_parameters=[
-            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True),
-            openapi.Parameter("title", openapi.IN_FORM, type=openapi.TYPE_STRING),
-            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING),
-            openapi.Parameter("document_type", openapi.IN_FORM, type=openapi.TYPE_STRING,
-                              enum=['medical_report', 'price_list', 'recommendations', 'other']),
+            openapi.Parameter(
+                "file",
+                openapi.IN_FORM,
+                type=openapi.TYPE_FILE,
+                required=True,
+                description="PDF/DOC fayl (max 10MB)"
+            ),
+            openapi.Parameter(
+                "title",
+                openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                description="Sarlavha (masalan: 'Tibbiy xulosa')"
+            ),
+            openapi.Parameter(
+                "description",
+                openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                description="Qo'shimcha izoh"
+            ),
+            openapi.Parameter(
+                "document_type",
+                openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                enum=['medical_report', 'price_list', 'recommendations', 'other'],
+                description="Hujjat turi"
+            ),
         ],
-        responses={201: PartnerResponseDocumentSerializer()},
-        tags=["partner-panel"]
+        responses={
+            201: PartnerResponseDocumentSerializer(),
+            400: 'Noto\'g\'ri ma\'lumot',
+            404: 'Bemor topilmadi',
+        },
+        tags=['partner']
     )
     @action(
         detail=True,
@@ -278,17 +329,7 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         parser_classes=[MultiPartParser, FormParser]
     )
     def upload_response(self, request, pk=None):
-        """
-        Javob xati yuklash
-
-        POST /api/v1/partner/patients/{id}/upload-response/
-
-        Form-data:
-        - file: PDF/DOC file
-        - title: "Tibbiy xulosa"
-        - description: "..."
-        - document_type: "medical_report"
-        """
+        """Javob xati yuklash"""
         patient = self.get_object()
         partner = request.user.partner_profile
 
@@ -297,16 +338,16 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         # Document yaratish
-        document = serializer.save(
-            patient=patient,
-            partner=partner
-        )
+        document = serializer.save(patient=patient, partner=partner)
 
-        # Bosqichni "JAVOB XATLARI"ga o'tkazish (agar hali o'tmagan bo'lsa)
-        response_stage_code = 'stage_response'
-        if patient.stage.code != response_stage_code:
+        # ===============================================================
+        # Bosqichni "JAVOB_XATLARI" (RESPONSE) ga o'tkazish
+        # ===============================================================
+        response_stage_code_name = 'RESPONSE'
+
+        if patient.stage and patient.stage.code_name != response_stage_code_name:
             try:
-                response_stage = Stage.objects.get(code=response_stage_code)
+                response_stage = Stage.objects.get(code_name=response_stage_code_name)
                 old_stage = patient.stage
                 patient.stage = response_stage
                 patient.save()
@@ -318,7 +359,7 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
                     comment=f"Javob xati yuklandi. Bosqich: {old_stage.title} → {response_stage.title}"
                 )
             except Stage.DoesNotExist:
-                logger.error(f"Stage '{response_stage_code}' topilmadi")
+                logger.error(f"Stage '{response_stage_code_name}' topilmadi")
 
         # Response
         output_serializer = PartnerResponseDocumentSerializer(
@@ -335,9 +376,10 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
     """
     Hamkor profili
 
-    GET /api/v1/partner/profile/
+    GET  /api/v1/partner/profile/
     PATCH /api/v1/partner/profile/
     """
+
     permission_classes = [IsAuthenticated, IsPartnerUser]
     serializer_class = PartnerProfileSerializer
 
@@ -347,9 +389,17 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
 
     @swagger_auto_schema(
         operation_summary="👤 Hamkor profili",
-        operation_description="Hamkorning o'z profil ma'lumotlari",
+        operation_description="""
+        Hamkorning o'z profil ma'lumotlari.
+
+        **Ko'rinadi:**
+        - Klinika/Shifokor nomi
+        - Kontakt ma'lumotlar
+        - Mutaxassislik
+        - Statistika (jami bemorlar, faol bemorlar)
+        """,
         responses={200: PartnerProfileSerializer()},
-        tags=["partner-profile"]
+        tags=['partner']
     )
     def get(self, request, *args, **kwargs):
         """Profilni ko'rish"""
@@ -357,9 +407,18 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
 
     @swagger_auto_schema(
         operation_summary="✏️ Profilni yangilash",
+        operation_description="""
+        Hamkor profil ma'lumotlarini yangilash.
+
+        **Yangilanishi mumkin:**
+        - contact_person
+        - phone
+        - email
+        - specialization
+        """,
         request_body=PartnerProfileSerializer,
         responses={200: PartnerProfileSerializer()},
-        tags=["partner-profile"]
+        tags=['partner']
     )
     def patch(self, request, *args, **kwargs):
         """Profilni yangilash"""
@@ -376,6 +435,7 @@ class PartnerResponseDocumentViewSet(viewsets.ReadOnlyModelViewSet):
     GET /api/v1/partner/responses/
     GET /api/v1/partner/responses/{id}/
     """
+
     permission_classes = [IsAuthenticated, IsPartnerUser]
     serializer_class = PartnerResponseDocumentSerializer
     pagination_class = PartnerPagination
@@ -393,9 +453,26 @@ class PartnerResponseDocumentViewSet(viewsets.ReadOnlyModelViewSet):
 
     @swagger_auto_schema(
         operation_summary="📄 Javob xatlari ro'yxati",
+        operation_description="""
+        Hamkor tomonidan yuklangan barcha javob xatlari.
+
+        **Filters:**
+        - `?document_type=medical_report`
+        - `?patient_id=17`
+        """,
         responses={200: PartnerResponseDocumentSerializer(many=True)},
-        tags=["partner-responses"]
+        tags=['partner']
     )
     def list(self, request, *args, **kwargs):
         """Javob xatlari ro'yxati"""
         return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="📄 Javob xati detail",
+        operation_description="Bitta javob xatining batafsil ma'lumotlari",
+        responses={200: PartnerResponseDocumentSerializer()},
+        tags=['partner']
+    )
+    def retrieve(self, request, pk=None):
+        """Javob xati detail"""
+        return super().retrieve(request, pk=pk)
