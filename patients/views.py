@@ -43,7 +43,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     - Update: Bemor ma'lumotlarini yangilash
     - Delete: Bemorni o'chirish
     """
-    queryset = Patient.objects.all().select_related('stage', 'tag').order_by('-created_at')
+    queryset = Patient.objects.all().select_related('stage', 'tag').order_by('-id')
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = PatientPagination
 
