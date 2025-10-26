@@ -202,57 +202,63 @@ class OperatorLoginSerializer(TokenObtainPairSerializer):
 
 
 # --------------------------------------------PARTNET PANEL-------------------------------------------------------------
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.exceptions import AuthenticationFailed
+
 
 class PartnerLoginSerializer(TokenObtainPairSerializer):
+    """
+    Partner login - oddiy versiya
+
+    1. Bazadan user topish (phone_number)
+    2. Parolni tekshirish
+    3. Role='partner' tekshirish
+    4. Token berish
+    """
+
     @classmethod
     def get_token(cls, user):
-        """Token ga custom claims qo'shish"""
+        """JWT token yaratish"""
         token = super().get_token(user)
 
         # Custom claims
         token['role'] = user.role
         token['phone_number'] = user.phone_number
-        token['is_partner'] = True
 
-        # Partner profile mavjud bo'lsa
+        # Partner profile (agar bo'lsa)
         if hasattr(user, 'partner_profile'):
             token['partner_id'] = user.partner_profile.id
             token['partner_name'] = user.partner_profile.name
-            token['partner_code'] = user.partner_profile.code
 
         return token
 
     def validate(self, attrs):
-        """Validation - faqat partner login qila oladi"""
+        """
+        Validation:
+        1. Parent class parol tekshiradi
+        2. Biz faqat role tekshiramiz
+        """
+        # Parent class authenticate qiladi (phone_number + password)
         data = super().validate(attrs)
 
         # Role tekshirish
-        if getattr(self.user, "role", None) != "partner":
-            raise AuthenticationFailed("Faqat hamkorlar login qila oladi.")
-
-        # Partner profil tekshirish
-        if not hasattr(self.user, 'partner_profile'):
+        if self.user.role != 'partner':
             raise AuthenticationFailed(
-                "Partner profili topilmadi. Administrator bilan bog'laning."
+                "Faqat hamkorlar login qila oladi. Sizning role: {}".format(self.user.role)
             )
 
-        # Partner faolmi?
-        if not self.user.partner_profile.is_active:
-            raise AuthenticationFailed("Partner profili faol emas.")
-
-        # User haqida qo'shimcha info
+        # User ma'lumotlarini qaytarish
         data['user'] = {
-            "id": self.user.id,
-            "phone_number": self.user.phone_number,
-            "role": self.user.role,
-            "first_name": self.user.first_name,
-            "last_name": self.user.last_name,
-            "partner_id": self.user.partner_profile.id,
-            "partner_name": self.user.partner_profile.name,
-            "partner_code": self.user.partner_profile.code,
+            'id': self.user.id,
+            'phone_number': self.user.phone_number,
+            'role': self.user.role,
+            'first_name': self.user.first_name or '',
+            'last_name': self.user.last_name or '',
         }
+
+        # Partner profile (agar bo'lsa)
+        if hasattr(self.user, 'partner_profile'):
+            data['user']['partner_id'] = self.user.partner_profile.id
+            data['user']['partner_name'] = self.user.partner_profile.name
+            data['user']['partner_code'] = self.user.partner_profile.code
 
         return data
 
