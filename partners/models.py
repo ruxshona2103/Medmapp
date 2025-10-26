@@ -1,13 +1,38 @@
+# partners/models.py
+# ===============================================================
+# HAMKOR PANEL - MODELS (TO'LIQ TO'G'RILANGAN)
+# ===============================================================
+
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 User = get_user_model()
 
 
+# ===============================================================
+# PARTNER MODEL
+# ===============================================================
 class Partner(models.Model):
+    """
+    Hamkor (Klinika/Shifokor) profili
+    """
+
     # User relation
-    user = models.OneToOneField(User,on_delete=models.CASCADE,related_name='partner_profile',verbose_name='Foydalanuvchi')
-    name = models.CharField(max_length=255,verbose_name='Klinika/Shifokor nomi',help_text='Masalan: "Medion Klinika" yoki "Dr. Aliyev"')
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='partner_profile',
+        verbose_name='Foydalanuvchi'
+    )
+
+    # Hamkor ma'lumotlari
+    name = models.CharField(
+        max_length=255,
+        verbose_name='Klinika/Shifokor nomi',
+        help_text='Masalan: "Medion Klinika" yoki "Dr. Aliyev"'
+    )
+
     code = models.CharField(
         max_length=50,
         unique=True,
@@ -74,6 +99,10 @@ class Partner(models.Model):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+    # ===============================================================
+    # PROPERTIES - TO'G'RILANGAN
+    # ===============================================================
+
     @property
     def total_patients(self):
         """Jami bemorlar soni"""
@@ -81,10 +110,27 @@ class Partner(models.Model):
 
     @property
     def active_patients(self):
-        """Faol bemorlar soni (HUJJATLAR, JAVOB_XATLARI bosqichlarida)"""
-        from core.models import Stage
-        active_stages = ['stage_documents', 'stage_response']
-        return self.assigned_patients.filter(stage__code__in=active_stages).count()
+        """
+        Faol bemorlar soni (HUJJATLAR, JAVOB_XATLARI bosqichlarida)
+
+        ✅ TO'G'RI VERSIYA - stage__in ishlatish
+        """
+        try:
+            from core.models import Stage
+
+            # Stage ID larini olish
+            active_stage_ids = Stage.objects.filter(
+                code__in=['stage_documents', 'stage_response']
+            ).values_list('id', flat=True)
+
+            # Bemorlarni filter qilish (stage_id__in)
+            return self.assigned_patients.filter(
+                stage_id__in=active_stage_ids
+            ).count()
+
+        except Exception:
+            # Agar xato bo'lsa, 0 qaytarish
+            return 0
 
 
 # ===============================================================
@@ -93,8 +139,6 @@ class Partner(models.Model):
 class PartnerResponseDocument(models.Model):
     """
     Hamkor javob xati (Tibbiy xulosa, narxlar, tavsiyalar)
-
-    Hamkor "Javob xatlari" bosqichida tibbiy xulosalarni yuklaydi.
     """
 
     # Relations
@@ -172,28 +216,3 @@ class PartnerResponseDocument(models.Model):
         if self.file and not self.file_name:
             self.file_name = self.file.name.split('/')[-1]
         super().save(*args, **kwargs)
-
-
-# ===============================================================
-# PATIENT MODEL EXTENSION (patients/models.py ga qo'shish kerak)
-# ===============================================================
-"""
-Patient modeliga quyidagi fieldni qo'shing:
-
-from partners.models import Partner
-
-class Patient(models.Model):
-    # ... existing fields ...
-
-    # Hamkorga biriktirish
-    assigned_partner = models.ForeignKey(
-        Partner,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='assigned_patients',
-        verbose_name='Biriktirilgan hamkor',
-        help_text='Operator tomonidan tanlanadi'
-    )
-"""
-
