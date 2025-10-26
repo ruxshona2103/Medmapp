@@ -199,3 +199,82 @@ class OperatorLoginSerializer(TokenObtainPairSerializer):
             "last_name": self.user.last_name,
         }
         return data
+
+
+# --------------------------------------------PARTNET PANEL-------------------------------------------------------------
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
+
+class PartnerLoginSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        """Token ga custom claims qo'shish"""
+        token = super().get_token(user)
+
+        # Custom claims
+        token['role'] = user.role
+        token['phone_number'] = user.phone_number
+        token['is_partner'] = True
+
+        # Partner profile mavjud bo'lsa
+        if hasattr(user, 'partner_profile'):
+            token['partner_id'] = user.partner_profile.id
+            token['partner_name'] = user.partner_profile.name
+            token['partner_code'] = user.partner_profile.code
+
+        return token
+
+    def validate(self, attrs):
+        """Validation - faqat partner login qila oladi"""
+        data = super().validate(attrs)
+
+        # Role tekshirish
+        if getattr(self.user, "role", None) != "partner":
+            raise AuthenticationFailed("Faqat hamkorlar login qila oladi.")
+
+        # Partner profil tekshirish
+        if not hasattr(self.user, 'partner_profile'):
+            raise AuthenticationFailed(
+                "Partner profili topilmadi. Administrator bilan bog'laning."
+            )
+
+        # Partner faolmi?
+        if not self.user.partner_profile.is_active:
+            raise AuthenticationFailed("Partner profili faol emas.")
+
+        # User haqida qo'shimcha info
+        data['user'] = {
+            "id": self.user.id,
+            "phone_number": self.user.phone_number,
+            "role": self.user.role,
+            "first_name": self.user.first_name,
+            "last_name": self.user.last_name,
+            "partner_id": self.user.partner_profile.id,
+            "partner_name": self.user.partner_profile.name,
+            "partner_code": self.user.partner_profile.code,
+        }
+
+        return data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

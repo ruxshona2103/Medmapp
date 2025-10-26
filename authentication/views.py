@@ -1,6 +1,7 @@
 # authentication/views.py
 from django.contrib.auth import get_user_model
 from django.db import transaction, IntegrityError
+from drf_yasg import openapi
 from rest_framework import status, viewsets, filters, generics, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -20,7 +21,7 @@ from .serializers import (
     UserSerializer,
     LoginSerializer,
     MedicalFileSerializer,
-    OperatorLoginSerializer,
+    OperatorLoginSerializer, PartnerLoginSerializer,
 )
 
 # 👉 OTP tasdiqlanganda avtomatik Patient yaratish uchun
@@ -264,3 +265,103 @@ class OperatorTokenRefreshView(TokenRefreshView):
     Refresh token orqali yangi access token olish.
     """
     pass
+
+
+# ===============================================================
+# PARTNER LOGIN
+# ===============================================================
+class PartnerLoginView(TokenObtainPairView):
+    serializer_class = PartnerLoginSerializer
+
+    @swagger_auto_schema(
+        operation_summary="🔐 Partner Login",
+        operation_description="""
+        Hamkor uchun JWT token olish.
+
+        Credentials:
+        - phone_number: Partner telefon raqami
+        - password: Parol
+
+        ✅ Faqat role='partner' bo'lgan userlar login qila oladi.
+        ✅ Partner profiliga ega bo'lishi kerak.
+        ✅ Partner faol bo'lishi kerak.
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['phone_number', 'password'],
+            properties={
+                'phone_number': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Telefon raqam',
+                    example='+998901234567'
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Parol',
+                    example='partner123'
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                'Success',
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'access': openapi.Schema(type=openapi.TYPE_STRING),
+                        'refresh': openapi.Schema(type=openapi.TYPE_STRING),
+                        'user': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'phone_number': openapi.Schema(type=openapi.TYPE_STRING),
+                                'role': openapi.Schema(type=openapi.TYPE_STRING),
+                                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'partner_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'partner_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'partner_code': openapi.Schema(type=openapi.TYPE_STRING),
+                            }
+                        )
+                    }
+                )
+            ),
+            401: 'Unauthorized - Noto\'g\'ri credentials, role yoki partner profili topilmadi'
+        },
+        tags=['auth-partner']
+    )
+    def post(self, request, *args, **kwargs):
+        """Partner login"""
+        return super().post(request, *args, **kwargs)
+
+
+class PartnerTokenRefreshView(TokenRefreshView):
+    @swagger_auto_schema(
+        operation_summary="🔄 Partner Token Refresh",
+        operation_description="Refresh token orqali yangi access token olish",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['refresh'],
+            properties={
+                'refresh': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Refresh token'
+                ),
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                'Success',
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'access': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            )
+        },
+        tags=['auth-partner']
+    )
+    def post(self, request, *args, **kwargs):
+        """Token refresh"""
+        return super().post(request, *args, **kwargs)

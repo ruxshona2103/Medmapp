@@ -10,7 +10,7 @@ from .views import (
     RegisterView,
     LoginView,
     MedicalFileListView,
-    MedicalFileUploadView, OperatorLoginView, OperatorTokenRefreshView,
+    MedicalFileUploadView, OperatorLoginView, OperatorTokenRefreshView, PartnerLoginView, PartnerTokenRefreshView,
 )
 
 router = DefaultRouter()
@@ -19,6 +19,10 @@ router.register(r'users', UserViewSet, basename='user')
 urlpatterns = [
     path("auth/operator/login/", OperatorLoginView.as_view(), name="operator_login"),
     path("auth/operator/refresh/", OperatorTokenRefreshView.as_view(), name="operator_refresh"),
+
+    path('partner/login/', PartnerLoginView.as_view(), name='partner-login'),
+    path('partner/refresh/', PartnerTokenRefreshView.as_view(), name='partner-refresh'),
+
     # OTP auth
     path("auth/request-otp/", OtpRequestView.as_view(), name="request-otp"),
     path("auth/verify-otp/", OtpVerifyView.as_view(), name="verify-otp"),

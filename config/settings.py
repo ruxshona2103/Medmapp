@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "consultations",
     "reviews.apps.ReviewsConfig",
     "core.apps.CoreConfig",
+    "partners",
 ]
 
 # ==========================
