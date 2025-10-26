@@ -19,7 +19,7 @@ urlpatterns = [
     path('', include(router.urls)),
 
     # Profile
-    path('profile/', PartnerProfileView.as_view(), name='partner-profile'),
+    path('partner/', PartnerProfileView.as_view(), name='partner-profile'),
 ]
 
 # ===============================================================
