@@ -231,22 +231,20 @@ class PartnerStageChangeSerializer(serializers.Serializer):
 # ===============================================================
 # RESPONSE DOCUMENT UPLOAD SERIALIZER
 # ===============================================================
-
 class PartnerResponseUploadSerializer(serializers.ModelSerializer):
     """
-    Javob xati yuklash
-
-    Hamkor tibbiy xulosa, narxlar jadvalini yuklaydi.
+    Javob xati yuklash (hamkor tomonidan)
     """
 
     class Meta:
         model = PartnerResponseDocument
-        fields = [
-            'file',
-            'title',
-            'description',
-            'document_type',
-        ]
+        fields = ['file', 'title', 'description', 'document_type']
+        extra_kwargs = {
+            'file': {'required': True},
+            'title': {'required': False, 'allow_blank': True},
+            'description': {'required': False, 'allow_blank': True},
+            'document_type': {'required': False},
+        }
 
     def validate_file(self, value):
         """File hajmini tekshirish (max 10MB)"""
@@ -256,6 +254,24 @@ class PartnerResponseUploadSerializer(serializers.ModelSerializer):
                 f"Fayl hajmi {max_size / (1024 * 1024)}MB dan oshmasligi kerak"
             )
         return value
+
+    def create(self, validated_data):
+        """
+        ✅ Bemor va hamkorni kontekstdan olish
+        (upload_response view ichida context orqali yuboriladi)
+        """
+        patient = self.context.get("patient")
+        partner = self.context.get("partner")
+
+        if not patient or not partner:
+            raise serializers.ValidationError("Patient yoki Partner kontekstdan topilmadi.")
+
+        document = PartnerResponseDocument.objects.create(
+            patient=patient,
+            partner=partner,
+            **validated_data
+        )
+        return document
 
 
 # ===============================================================
@@ -293,3 +309,5 @@ class PartnerProfileSerializer(serializers.ModelSerializer):
             'active_patients',
             'created_at',
         ]
+
+
