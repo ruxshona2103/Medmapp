@@ -12,7 +12,7 @@ from .views import (
     DocumentListCreateView,
     ChangeApplicationStageView,
     ChangeApplicationStatusView,
-    application_statistics,
+    application_statistics, AssignPatientToPartnerView,
 )
 
 # ===============================================================
@@ -57,6 +57,8 @@ urlpatterns = [
     path('applications/<int:application_id>/change-status/',
          ChangeApplicationStatusView.as_view(),
          name='change-application-status'),
+
+    path("assign_partner/", AssignPatientToPartnerView.as_view(), name="assign-partner"),
 
     # ✅ 2. KEYIN - Router (oxirida)
     path('', include(router.urls)),
