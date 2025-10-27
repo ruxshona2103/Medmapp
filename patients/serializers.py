@@ -171,8 +171,6 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             return Application.objects.filter(patient=obj, is_archived=False).count()
         except:
             return 0
-
-
 # ===============================================================
 # PATIENT CREATE/UPDATE SERIALIZER
 # ===============================================================
@@ -181,6 +179,8 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
     avatar = serializers.ImageField(required=False, allow_null=True)
     stage_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     tag_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    assigned_partner_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    assigned_partner = serializers.SerializerMethodField(read_only=True)
     stage = serializers.SerializerMethodField(read_only=True)
     tag = serializers.SerializerMethodField(read_only=True)
     avatar_url = serializers.SerializerMethodField(read_only=True)
@@ -190,9 +190,11 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
         fields = [
             "id", "full_name", "date_of_birth", "gender", "phone_number", "email",
             "complaints", "previous_diagnosis", "avatar", "avatar_url",
-            "stage_id", "stage", "tag_id", "tag", "created_at", "updated_at"
+            "stage_id", "stage", "tag_id", "tag",
+            "assigned_partner_id", "assigned_partner",
+            "created_at", "updated_at"
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "avatar_url", "stage", "tag"]
+        read_only_fields = ["id", "created_at", "updated_at", "avatar_url", "stage", "tag", "assigned_partner"]
         ref_name = "PatientCreateUpdateSerializer"
 
     def validate_stage_id(self, value):
@@ -208,50 +210,73 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """
         ✅ Yangi bemor yaratish
-
-        created_by - request.user
+        - created_by = request.user
+        - default tag = "Normal"
+        - assigned_partner_id bo‘lsa, ulanadi
         """
+        from partners.models import Partner
+
         stage_id = validated_data.pop('stage_id', None)
         tag_id = validated_data.pop('tag_id', None)
+        assigned_partner_id = validated_data.pop('assigned_partner_id', None)
 
-        # ✅ MUHIM - created_by qo'shish
         patient = Patient.objects.create(
             created_by=self.context['request'].user,
             **validated_data
         )
 
+        # ✅ Stage
         if stage_id:
             patient.stage = Stage.objects.get(id=stage_id)
+
+        # ✅ Tag (Normal tag avtomatik)
         if tag_id:
             patient.tag = Tag.objects.get(id=tag_id)
+        else:
+            normal_tag, _ = Tag.objects.get_or_create(name="Normal")
+            patient.tag = normal_tag
+
+        # ✅ Assigned Partner (ixtiyoriy)
+        if assigned_partner_id:
+            partner = Partner.objects.filter(id=assigned_partner_id).first()
+            if partner:
+                patient.assigned_partner = partner
+
         patient.save()
 
-        try:
-            PatientHistory.objects.create(
-                patient=patient,
-                author=self.context['request'].user,
-                comment="✅ Yangi bemor yaratildi"
-            )
-        except:
-            pass
+        # ✅ History yozish
+        PatientHistory.objects.create(
+            patient=patient,
+            author=self.context['request'].user,
+            comment="✅ Yangi bemor yaratildi"
+        )
 
         return patient
 
     def update(self, instance, validated_data):
+        from partners.models import Partner
+
         stage_id = validated_data.pop('stage_id', None)
         tag_id = validated_data.pop('tag_id', None)
+        assigned_partner_id = validated_data.pop('assigned_partner_id', None)
+
         if stage_id is not None:
             instance.stage = Stage.objects.get(id=stage_id) if stage_id else None
         if tag_id is not None:
             instance.tag = Tag.objects.get(id=tag_id) if tag_id else None
+        if assigned_partner_id is not None:
+            instance.assigned_partner = Partner.objects.filter(id=assigned_partner_id).first()
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        try:
-            PatientHistory.objects.create(patient=instance, author=self.context['request'].user,
-                                          comment="🔄 Ma'lumotlar yangilandi")
-        except:
-            pass
+
+        # ✅ Tarixga yozish
+        PatientHistory.objects.create(
+            patient=instance,
+            author=self.context['request'].user,
+            comment="🔄 Ma'lumotlar yangilandi"
+        )
         return instance
 
     def get_stage(self, obj):
@@ -264,17 +289,74 @@ class PatientCreateUpdateSerializer(serializers.ModelSerializer):
             return {"id": obj.tag.id, "name": obj.tag.name}
         return None
 
-    def get_avatar_url(self, obj):
-        if obj.avatar:
-            try:
-                request = self.context.get('request')
-                if request:
-                    return request.build_absolute_uri(obj.avatar.url)
-                return obj.avatar.url
-            except:
-                return None
+    def get_assigned_partner(self, obj):
+        if obj.assigned_partner:
+            return {
+                "id": obj.assigned_partner.id,
+                "name": obj.assigned_partner.name,
+                "code": obj.assigned_partner.code
+            }
         return None
 
+    def get_avatar_url(self, obj):
+        if obj.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
+
+
+# ===============================================================
+# PATIENT PROFILE SERIALIZER
+# ===============================================================
+class PatientProfileSerializer(serializers.ModelSerializer):
+    """Bemor profili"""
+    stage_id = serializers.IntegerField(source='stage.id', read_only=True, allow_null=True)
+    tag_id = serializers.IntegerField(source='tag.id', read_only=True, allow_null=True)
+    assigned_partner = serializers.SerializerMethodField()
+    avatar = serializers.ImageField(required=False, allow_null=True)
+    avatar_url = serializers.SerializerMethodField()
+    stage = serializers.SerializerMethodField()
+    tag = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Patient
+        fields = [
+            "id", "full_name", "date_of_birth", "gender", "phone_number", "email",
+            "complaints", "previous_diagnosis",
+            "stage_id", "stage", "tag_id", "tag",
+            "assigned_partner", "avatar", "avatar_url",
+            "created_at", "updated_at"
+        ]
+        ref_name = "PatientProfileSerializer"
+
+    def get_assigned_partner(self, obj):
+        if obj.assigned_partner:
+            return {
+                "id": obj.assigned_partner.id,
+                "name": obj.assigned_partner.name,
+                "code": obj.assigned_partner.code
+            }
+        return None
+
+    def get_avatar_url(self, obj):
+        if obj.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
+
+    def get_stage(self, obj):
+        if obj.stage:
+            return {"id": obj.stage.id, "title": obj.stage.title, "order": obj.stage.order}
+        return None
+
+    def get_tag(self, obj):
+        if obj.tag:
+            return {"id": obj.tag.id, "name": obj.tag.name}
+        return None
 
 # ===============================================================
 # CHAT MESSAGE SERIALIZER
@@ -296,48 +378,4 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             if request:
                 return request.build_absolute_uri(obj.file.url)
             return obj.file.url
-        return None
-
-
-# ===============================================================
-# PATIENT PROFILE SERIALIZER
-# ===============================================================
-class PatientProfileSerializer(serializers.ModelSerializer):
-    """Bemor profili"""
-    stage_id = serializers.IntegerField(source='stage.id', read_only=True, allow_null=True)
-    tag_id = serializers.IntegerField(source='tag.id', read_only=True, allow_null=True)
-    avatar = serializers.ImageField(required=False, allow_null=True)
-    avatar_url = serializers.SerializerMethodField()
-    stage = serializers.SerializerMethodField()
-    tag = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Patient
-        fields = [
-            "id", "full_name", "date_of_birth", "gender", "phone_number", "email",
-            "complaints", "previous_diagnosis",
-            "stage_id", "stage", "tag_id", "tag", "avatar", "avatar_url",
-            "created_at", "updated_at"
-        ]
-        ref_name = "PatientProfileSerializer"
-
-    def get_avatar_url(self, obj):
-        if obj.avatar:
-            try:
-                request = self.context.get('request')
-                if request:
-                    return request.build_absolute_uri(obj.avatar.url)
-                return obj.avatar.url
-            except:
-                return None
-        return None
-
-    def get_stage(self, obj):
-        if obj.stage:
-            return {"id": obj.stage.id, "title": obj.stage.title, "order": obj.stage.order}
-        return None
-
-    def get_tag(self, obj):
-        if obj.tag:
-            return {"id": obj.tag.id, "name": obj.tag.name}
         return None
