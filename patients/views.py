@@ -10,40 +10,20 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+
+from core.models import Stage, Tag
 from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
 from .serializers import (
     PatientListSerializer,
     PatientDetailSerializer,
     PatientCreateUpdateSerializer,
     PatientProfileSerializer,
-    PatientDocumentSerializer,
-    PatientHistorySerializer,
-    ChatMessageSerializer,
+    PatientDocumentSerializer, PatientHistorySerializer,
+
 )
-from datetime import timedelta
-from django.utils import timezone
-from django.db.models import Q
-from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
-from .models import Patient, PatientHistory
-from .serializers import (
-    PatientListSerializer,
-    PatientDetailSerializer,
-    PatientCreateUpdateSerializer,
-    PatientProfileSerializer,
-    PatientHistorySerializer,
-)
-from core.models import Stage, Tag
 
 
-# ===============================================================
-# 🧩 YORDAMCHI FUNKSIYA - Tarix yozish
-# ===============================================================
+
 def log_patient_history(patient, user, comment):
     """
     Bemorga tarix yozish uchun universal yordamchi funksiya.
@@ -63,27 +43,13 @@ def log_patient_history(patient, user, comment):
         print(f"[PATIENT HISTORY ERROR] Tarix yozishda xato: {str(e)}")
 
 
-# ===============================================================
-# 📄 PAGINATION
-# ===============================================================
 class PatientPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
 
 
-# ===============================================================
-# 👤 PATIENT VIEWSET
-# ===============================================================
 class PatientViewSet(viewsets.ModelViewSet):
-    """
-    👤 Bemorlar API
-    - List: Barcha bemorlar (Kanban board uchun minimal ma'lumotlar)
-    - Retrieve: Bitta bemor (to'liq ma'lumotlar - applications, documents, history)
-    - Create: Yangi bemor yaratish
-    - Update: Bemor ma'lumotlarini yangilash
-    - Delete: Bemorni o'chirish
-    """
     queryset = Patient.objects.all().select_related('stage', 'tag').order_by('-id')
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = PatientPagination
