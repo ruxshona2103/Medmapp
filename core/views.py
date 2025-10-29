@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
@@ -7,7 +7,6 @@ from django.db import transaction
 from django.db.models import Prefetch, Max
 from .models import Stage, Tag
 from .serializers import StageSerializer, TagSerializer
-from core.permissions import IsOperator
 from patients.models import Patient
 
 
@@ -21,7 +20,7 @@ class StageViewSet(viewsets.ModelViewSet):
     - Yangi bosqich yaratilganda avtomatik order belgilanadi
     """
     serializer_class = StageSerializer
-    permission_classes = [IsOperator]
+    permission_classes = [permissions.IsAuthenticated]
 
     # ===========================================================
     # 📋 Bosqichlar ro‘yxati (default tartib: order -> id)
@@ -150,7 +149,7 @@ class TagViewSet(viewsets.ModelViewSet):
     """
     queryset = Tag.objects.all().order_by("id")
     serializer_class = TagSerializer
-    permission_classes = [IsOperator]
+    permission_classes = [permissions.IsAuthenticated]
     http_method_names = ["get", "post", "put", "patch", "delete"]
 
     @swagger_auto_schema(operation_description="Barcha teglar ro‘yxatini olish.")
