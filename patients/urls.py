@@ -1,17 +1,18 @@
 # patients/urls.py
 # ===============================================================
-# PATIENTS URLS - TO'G'RI TARTIB
+# PATIENTS URLS - TO'G'RI TARTIB (documents va responses bir joyda)
 # ===============================================================
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
 from .views import (
     PatientViewSet,
     PatientDocumentViewSet,
-    ResponseLettersViewSet,
     ContractApproveViewSet,
     MeProfileView,
     patient_statistics,
+    PatientResponseListView,
 )
 
 # ===============================================================
@@ -19,7 +20,6 @@ from .views import (
 # ===============================================================
 router = DefaultRouter()
 router.register(r"patients", PatientViewSet, basename="patient")
-router.register(r"response-letters", ResponseLettersViewSet, basename="response-letters")
 router.register(r"contracts", ContractApproveViewSet, basename="contracts")
 
 # ===============================================================
@@ -28,25 +28,47 @@ router.register(r"contracts", ContractApproveViewSet, basename="contracts")
 urlpatterns = [
     # ✅ 1. AVVAL - Maxsus pathlar (router'dan oldin)
 
-    # Statistics - ✅ ROUTER'DAN OLDIN!
-    path("patients/statistics/",
-         patient_statistics,
-         name="patient-statistics"),
+    # 📊 Statistics
+    path(
+        "patients/statistics/",
+        patient_statistics,
+        name="patient-statistics"
+    ),
 
-    # Patient documents
-    path("patients/<int:patient_pk>/documents/",
-         PatientDocumentViewSet.as_view({"post": "create"}),
-         name="patient-docs-create"),
+    # ============================================================
+    # 📎 DOCUMENTS (bemor fayllari va response fayllar bir joyda)
+    # ============================================================
 
-    path("documents/<int:pk>/",
-         PatientDocumentViewSet.as_view({"delete": "destroy"}),
-         name="patient-docs-delete"),
+    # Bemor uchun yangi hujjat yuklash
+    path(
+        "patients/<int:patient_pk>/documents/",
+        PatientDocumentViewSet.as_view({"post": "create"}),
+        name="patient-docs-create"
+    ),
 
-    # Profile
-    path("me/profile/",
-         MeProfileView.as_view(),
-         name="me-profile"),
+    # Hujjatni o‘chirish
+    path(
+        "documents/<int:pk>/",
+        PatientDocumentViewSet.as_view({"delete": "destroy"}),
+        name="patient-docs-delete"
+    ),
+
+    # 👩‍⚕️ Bemor → o‘ziga yuborilgan fayllarni ko‘radi (operator fayllari)
+    path(
+        "patients/documents/responses/my/",
+        PatientResponseListView.as_view(),
+        name="patient-response-list"
+    ),
+
+    # ============================================================
+    # 👤 PROFILE
+    # ============================================================
+    path(
+        "me/profile/",
+        MeProfileView.as_view(),
+        name="me-profile"
+    ),
 
     # ✅ 2. KEYIN - Router (oxirida)
-    path('', include(router.urls)),
+    path("", include(router.urls)),
 ]

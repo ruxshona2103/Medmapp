@@ -1,14 +1,9 @@
-# partners/urls.py
-# ===============================================================
-# HAMKOR PANEL - URLs
-# ===============================================================
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     PartnerPatientViewSet,
     PartnerProfileView,
-    PartnerResponseDocumentViewSet,
+    PartnerResponseDocumentViewSet, OperatorSendResponseView, PartnerSendResponseView, ResponsesMyListView,
 )
 
 router = DefaultRouter()
@@ -20,6 +15,27 @@ urlpatterns = [
 
     # Profile
     path('partner/', PartnerProfileView.as_view(), name='partner-profile'),
+
+    # Operator → Patient
+    path(
+        "responses/operator/send/<int:patient_id>/",
+        OperatorSendResponseView.as_view(),
+        name="responses-operator-send"
+    ),
+
+    # Partner → Operator
+    path(
+        "responses/partner/send/<int:patient_id>/",
+        PartnerSendResponseView.as_view(),
+        name="responses-partner-send"
+    ),
+
+    # All roles → See their own files
+    path(
+        "responses/my/",
+        ResponsesMyListView.as_view(),
+        name="responses-my"
+    ),
 ]
 
 # ===============================================================

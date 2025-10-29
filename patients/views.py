@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework import viewsets, status, permissions, generics
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -10,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from rest_framework.views import APIView
 
 from core.models import Stage, Tag
 from .models import Patient, PatientHistory, PatientDocument, ChatMessage, Contract
@@ -813,3 +815,70 @@ def patient_statistics(request):
             {'detail': f'Xato: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+# ===============================================================
+# 📎 BEMOR — Faqat o‘ziga yuborilgan javob xatlarni olish
+# ===============================================================
+class PatientResponseListView(APIView):
+    """
+    👩‍⚕️ Bemor o‘ziga yuborilgan barcha javob xatlarini ko‘radi
+    - Faqat `source_type='operator'` bo‘lgan fayllar
+    - Ixtiyoriy: `source=partner` yoki `source=patient` filtr bilan
+    """
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="📎 Bemorga yuborilgan fayllar (javob xatlari)",
+        operation_description="""
+        Faqat bemor o‘ziga tegishli barcha fayllarni ko‘radi.
+
+        Query params:
+        - `source` = kim yuklagani (`operator`, `partner`, `patient`)
+        Agar parametr berilmasa — faqat `operator` fayllarini qaytaradi.
+        """,
+        manual_parameters=[
+            openapi.Parameter(
+                'source',
+                openapi.IN_QUERY,
+                description="Fayl manbasiga qarab filtr (operator, partner, patient)",
+                type=openapi.TYPE_STRING,
+            ),
+        ],
+        responses={200: "Bemor hujjatlar ro‘yxati"},
+        tags=["responses-patient"]
+    )
+    def get(self, request):
+        user = request.user
+
+        # Faqat bemor yoki user rolida bo‘lishi kerak
+        if getattr(user, "role", None) not in ["patient", "user"]:
+            return Response({"detail": "Faqat bemor uchun."}, status=403)
+
+        # Bemor profilini olish
+        try:
+            patient = Patient.objects.get(created_by=user)
+        except Patient.DoesNotExist:
+            return Response({"detail": "Bemor profili topilmadi."}, status=404)
+
+        # Faqat operator yuborgan fayllarni olish
+        source = request.query_params.get("source", "operator")
+        docs = PatientDocument.objects.filter(
+            patient=patient,
+            source_type=source
+        ).order_by("-uploaded_at")
+
+        # Serializer o‘rniga soddalashtirilgan response
+        data = [
+            {
+                "id": d.id,
+                "file_url": request.build_absolute_uri(d.file.url) if d.file else None,
+                "source": d.source_type,
+                "description": d.description,
+                "uploaded_by": getattr(d.uploaded_by, "username", None),
+                "uploaded_at": d.uploaded_at,
+            }
+            for d in docs
+        ]
+
+        return Response(data, status=200)
+
