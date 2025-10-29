@@ -297,17 +297,52 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+
+from applications.models import Patient
+from services.models import (
+    VisaRequest, TransferRequest, TranslatorRequest, SimCardRequest, Booking
+)
+from services.serializers import (
+    VisaRequestSerializer, TransferRequestSerializer,
+    TranslatorRequestSerializer, SimCardRequestSerializer, BookingSerializer
+)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+from applications.models import Patient
+from services.models import (
+    VisaRequest, TransferRequest, TranslatorRequest, SimCardRequest, Booking
+)
+from services.serializers import (
+    VisaRequestSerializer, TransferRequestSerializer,
+    TranslatorRequestSerializer, SimCardRequestSerializer, BookingSerializer
+)
+
+
+# ===========================================================
+# 1️⃣ BEMOR O‘Z BUYURTMALARINI KO‘RISH (/orders/me)
+# ===========================================================
 class OrdersMeView(APIView):
-    """
-    Bemor (patient) o'z buyurtma bergan barcha servicelarni ko'rish uchun.
-    URL: /orders/me (GET)
-    """
+    """Bemor (patient) o‘zining buyurtmalarini ko‘rish uchun."""
     permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        operation_summary="🧍‍♀️ Bemorga tegishli buyurtmalar (visa, simcard, booking va h.k.)",
+        operation_description="Login bo‘lgan bemor faqat o‘ziga tegishli buyurtmalarni ko‘radi.",
+        responses={200: "Bemorning barcha buyurtmalari"}
+    )
     def get(self, request):
         user = request.user
 
-        # Faqat patient roli uchun
         if user.role not in ["user", "patient"]:
             return Response(
                 {"detail": "Faqat bemorlar uchun."},
@@ -317,76 +352,156 @@ class OrdersMeView(APIView):
         data = {
             "visas": VisaRequestSerializer(
                 VisaRequest.objects.filter(user=user),
-                many=True,
-                context={"request": request}
+                many=True, context={"request": request}
             ).data,
             "transfers": TransferRequestSerializer(
                 TransferRequest.objects.filter(user=user),
-                many=True,
-                context={"request": request}
+                many=True, context={"request": request}
             ).data,
             "translators": TranslatorRequestSerializer(
                 TranslatorRequest.objects.filter(user=user),
-                many=True,
-                context={"request": request}
+                many=True, context={"request": request}
             ).data,
             "simcards": SimCardRequestSerializer(
                 SimCardRequest.objects.filter(user=user),
-                many=True,
-                context={"request": request}
+                many=True, context={"request": request}
             ).data,
             "bookings": BookingSerializer(
                 Booking.objects.filter(user=user),
-                many=True,
-                context={"request": request}
+                many=True, context={"request": request}
             ).data,
         }
 
-        return Response(data)
+        return Response(data, status=status.HTTP_200_OK)
 
 
+# ===========================================================
+# 2️⃣ ADMIN / OPERATOR / PARTNER uchun ORDERLAR (/orders/)
+# ===========================================================
 class OrdersListView(APIView):
-    """
-    Operator/admin/superadmin barcha buyurtmalarni ko'rish uchun.
-    URL: /orders/ (GET)
-    """
+    """Operator, admin, superadmin yoki partner barcha buyurtmalarni ko‘rish uchun."""
     permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        operation_summary="📦 Barcha buyurtmalar ro‘yxati (admin/operator/partner)",
+        operation_description=(
+            "Admin, operator, superadmin yoki partner barcha bemorlarning buyurtmalarini ko‘ra oladi.\n\n"
+            "Query parametrlari:\n"
+            "- **patient_id**: faqat shu bemorning buyurtmalarini ko‘rsatadi\n\n"
+            "**Misol:** `/orders/?patient_id=3` → Bemor ID=3 ning barcha buyurtmalari"
+        ),
+        manual_parameters=[
+            openapi.Parameter(
+                "patient_id",
+                openapi.IN_QUERY,
+                description="Bemor ID (shu bemorning buyurtmalarini ko‘rish uchun)",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            )
+        ],
+        responses={200: "Barcha buyurtmalar (visa, simcard, booking va h.k.)"}
+    )
     def get(self, request):
         user = request.user
+        patient_id = request.query_params.get("patient_id")
 
-        if user.role not in ["admin", "superadmin", "operator"]:
+        # ✅ Ruxsat berilgan rollar
+        allowed_roles = ["admin", "superadmin", "operator", "partner"]
+        if user.role not in allowed_roles:
             return Response(
-                {"detail": "Faqat operator/admin/superadmin uchun."},
+                {"detail": "Faqat operator, admin, superadmin yoki partner uchun."},
                 status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ✅ patient_id bo‘lsa – filtr qilamiz
+        if patient_id:
+            try:
+                patient = Patient.objects.get(id=patient_id)
+                user_obj = patient.created_by
+            except Patient.DoesNotExist:
+                return Response(
+                    {"detail": f"Bemor ID {patient_id} topilmadi."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            visas = VisaRequest.objects.filter(user=user_obj)
+            transfers = TransferRequest.objects.filter(user=user_obj)
+            translators = TranslatorRequest.objects.filter(user=user_obj)
+            simcards = SimCardRequest.objects.filter(user=user_obj)
+            bookings = Booking.objects.filter(user=user_obj)
+        else:
+            visas = VisaRequest.objects.all()
+            transfers = TransferRequest.objects.all()
+            translators = TranslatorRequest.objects.all()
+            simcards = SimCardRequest.objects.all()
+            bookings = Booking.objects.all()
+
+        data = {
+            "visas": VisaRequestSerializer(visas, many=True, context={"request": request}).data,
+            "transfers": TransferRequestSerializer(transfers, many=True, context={"request": request}).data,
+            "translators": TranslatorRequestSerializer(translators, many=True, context={"request": request}).data,
+            "simcards": SimCardRequestSerializer(simcards, many=True, context={"request": request}).data,
+            "bookings": BookingSerializer(bookings, many=True, context={"request": request}).data,
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+
+
+# ===========================================================
+# 3️⃣ Bitta bemorning ORDERLARI (/orders/{id}/)
+# ===========================================================
+class PatientOrdersDetailView(APIView):
+    """Bitta bemorning barcha buyurtmalarini olish (id bo‘yicha)."""
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="👤 Bemor buyurtmalari (ID orqali)",
+        operation_description=(
+            "Bitta bemorning barcha buyurtmalari (visa, booking, simcard, transfer, translator) qaytariladi.\n\n"
+            "**Misol:** `/orders/5/` → Bemor ID=5 ning barcha buyurtmalari"
+        ),
+        responses={200: "Bemorning barcha buyurtmalari"}
+    )
+    def get(self, request, id):
+        user = request.user
+
+        allowed_roles = ["admin", "superadmin", "operator", "partner"]
+        if user.role not in allowed_roles:
+            return Response(
+                {"detail": "Faqat operator, admin, superadmin yoki partner uchun."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            patient = Patient.objects.get(id=id)
+            user_obj = patient.created_by
+        except Patient.DoesNotExist:
+            return Response(
+                {"detail": f"Bemor ID {id} topilmadi."},
+                status=status.HTTP_404_NOT_FOUND
             )
 
         data = {
             "visas": VisaRequestSerializer(
-                VisaRequest.objects.all(),
-                many=True,
-                context={"request": request}
+                VisaRequest.objects.filter(user=user_obj),
+                many=True, context={"request": request}
             ).data,
             "transfers": TransferRequestSerializer(
-                TransferRequest.objects.all(),
-                many=True,
-                context={"request": request}
+                TransferRequest.objects.filter(user=user_obj),
+                many=True, context={"request": request}
             ).data,
             "translators": TranslatorRequestSerializer(
-                TranslatorRequest.objects.all(),
-                many=True,
-                context={"request": request}
+                TranslatorRequest.objects.filter(user=user_obj),
+                many=True, context={"request": request}
             ).data,
             "simcards": SimCardRequestSerializer(
-                SimCardRequest.objects.all(),
-                many=True,
-                context={"request": request}
+                SimCardRequest.objects.filter(user=user_obj),
+                many=True, context={"request": request}
             ).data,
             "bookings": BookingSerializer(
-                Booking.objects.all(),
-                many=True,
-                context={"request": request}
+                Booking.objects.filter(user=user_obj),
+                many=True, context={"request": request}
             ).data,
         }
 
-        return Response(data)
+        return Response(data, status=status.HTTP_200_OK)
