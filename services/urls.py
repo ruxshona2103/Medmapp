@@ -12,7 +12,7 @@ from .views import (
     SimCardCreateView,
     SimCardRetrieveView,
     OrdersMeView,  # Qo‘shilishi kerak
-    OrdersListView,  # Qo‘shilishi kerak
+    OrdersListView, PatientOrdersDetailView,  # Qo‘shilishi kerak
 )
 
 router = DefaultRouter()
@@ -39,6 +39,7 @@ urlpatterns = [
     # --- HOTEL & BOOKINGS (via router) ---
     path("", include(router.urls)),
     # --- ORDERS ---
-    path("orders/me/", OrdersMeView.as_view(), name="orders-me"),
-    path("orders/", OrdersListView.as_view(), name="orders-list"),
+    path('orders/me/', OrdersMeView.as_view(), name='orders-me'),
+    path('orders/', OrdersListView.as_view(), name='orders-list'),
+    path('orders/<int:id>/', PatientOrdersDetailView.as_view(), name='orders-by-patient'),
 ]
