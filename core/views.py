@@ -10,6 +10,9 @@ from .serializers import StageSerializer, TagSerializer
 from patients.models import Patient
 
 
+# ===============================================================
+# 🧩 STAGE VIEWSET
+# ===============================================================
 class StageViewSet(viewsets.ModelViewSet):
     """
     🧩 Bosqichlar (Stage) API
@@ -26,10 +29,6 @@ class StageViewSet(viewsets.ModelViewSet):
     # 📋 Bosqichlar ro‘yxati (default tartib: order -> id)
     # ===========================================================
     def get_queryset(self):
-        """
-        Default tartib — `order` qiymati mavjud bo‘lsa, shunga qarab;
-        bo‘lmasa, `id` bo‘yicha tartiblaydi.
-        """
         qs = Stage.objects.prefetch_related(
             Prefetch("patients", queryset=Patient.objects.all().order_by("-created_at"))
         )
@@ -51,8 +50,9 @@ class StageViewSet(viewsets.ModelViewSet):
     # 📋 Barcha bosqichlarni olish
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="Barcha bosqichlar ro‘yxati",
+        operation_summary="📋 Barcha bosqichlar ro‘yxati",
         operation_description="Bosqichlar ro‘yxatini `order` yoki `id` bo‘yicha tartiblangan holda qaytaradi.",
+        tags=["stages"]
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -61,18 +61,20 @@ class StageViewSet(viewsets.ModelViewSet):
     # ➕ Yangi bosqich yaratish
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="Yangi bosqich yaratish",
+        operation_summary="➕ Yangi bosqich yaratish",
         operation_description="Yangi bosqich qo‘shish (faqat operator yoki admin uchun).",
+        tags=["stages"]
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
     # ===========================================================
-    # ✏️ Bosqich ma’lumotlarini yangilash
+    # ✏️ Bosqich ma’lumotlarini yangilash (PATCH)
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="Bosqich ma’lumotlarini tahrirlash (PATCH)",
+        operation_summary="✏️ Bosqich ma’lumotlarini tahrirlash (PATCH)",
         operation_description="Bosqich nomi, rangi yoki boshqa atributlarini qisman yangilash imkonini beradi.",
+        tags=["stages"]
     )
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
@@ -81,8 +83,9 @@ class StageViewSet(viewsets.ModelViewSet):
     # 🗑️ Bosqichni o‘chirish
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="Bosqichni o‘chirish",
+        operation_summary="🗑️ Bosqichni o‘chirish",
         operation_description="Faqat operator yoki admin foydalanuvchi o‘chira oladi. ‘Yangi’ bosqichni o‘chirib bo‘lmaydi.",
+        tags=["stages"]
     )
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -97,7 +100,7 @@ class StageViewSet(viewsets.ModelViewSet):
     # 🔢 Bosqichlarni qayta tartiblash (ordering)
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="Bosqichlarni qayta tartiblash",
+        operation_summary="🔢 Bosqichlarni qayta tartiblash",
         operation_description=(
             "Frontenddagi drag-drop orqali yuborilgan tartib asosida `order` qiymatlarini yangilaydi.\n\n"
             "**Body misol:**\n"
@@ -138,36 +141,52 @@ class StageViewSet(viewsets.ModelViewSet):
 
         return Response({"detail": "Tartib muvaffaqiyatli yangilandi."}, status=status.HTTP_200_OK)
 
+
+# ===============================================================
+# 🏷️ TAG VIEWSET
+# ===============================================================
 class TagViewSet(viewsets.ModelViewSet):
-    """
-    TZ 3.2: Teglar (Tag) API
-    - Operator yoki admin foydalanuvchilar uchun CRUD
-    - GET /tags/ — barcha teglar ro‘yxati
-    - POST /tags/ — yangi teg yaratish
-    - PUT/PATCH /tags/{id}/ — tegni yangilash
-    - DELETE /tags/{id}/ — tegni o‘chirish
-    """
     queryset = Tag.objects.all().order_by("id")
     serializer_class = TagSerializer
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ["get", "post", "put", "patch", "delete"]
 
-    @swagger_auto_schema(operation_description="Barcha teglar ro‘yxatini olish.")
+    @swagger_auto_schema(
+        operation_summary="🏷️ Barcha teglar ro‘yxatini olish",
+        operation_description="Barcha mavjud teglarni olish (faqat operator yoki admin uchun).",
+        tags=["tags"]
+    )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Yangi teg yaratish (faqat operator yoki admin uchun).")
+    @swagger_auto_schema(
+        operation_summary="➕ Yangi teg yaratish",
+        operation_description="Yangi teg yaratish (faqat operator yoki admin uchun).",
+        tags=["tags"]
+    )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Tegni to‘liq yangilash (PUT).")
+    @swagger_auto_schema(
+        operation_summary="✏️ Tegni yangilash (PUT)",
+        operation_description="Tegni to‘liq yangilash (PUT metodi).",
+        tags=["tags"]
+    )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Tegni qisman yangilash (PATCH).")
+    @swagger_auto_schema(
+        operation_summary="🖋️ Tegni qisman yangilash (PATCH)",
+        operation_description="Tegni faqat bitta yoki bir nechta maydonlarini yangilash.",
+        tags=["tags"]
+    )
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_description="Tegni o‘chirish (ID bo‘yicha).")
+    @swagger_auto_schema(
+        operation_summary="🗑️ Tegni o‘chirish",
+        operation_description="Tegni ID bo‘yicha o‘chirish.",
+        tags=["tags"]
+    )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
