@@ -229,42 +229,31 @@ class PartnerStageChangeSerializer(serializers.Serializer):
 
 
 # ===============================================================
-# RESPONSE DOCUMENT UPLOAD SERIALIZER
+# SERIALIZER: Professional optimized response upload
 # ===============================================================
+
 class PartnerResponseUploadSerializer(serializers.ModelSerializer):
     """
-    Javob xati yuklash (hamkor tomonidan)
+    📤 Partner fayl yuklaydi (Documents bosqichidagi bemor uchun)
     """
+    file = serializers.FileField(required=True, help_text="Fayl (PDF, PNG, DOCX)")
+    description = serializers.CharField(required=False, allow_blank=True, help_text="Qo‘shimcha izoh")
 
     class Meta:
         model = PartnerResponseDocument
-        fields = ['file', 'title', 'description', 'document_type']
-        extra_kwargs = {
-            'file': {'required': True},
-            'title': {'required': False, 'allow_blank': True},
-            'description': {'required': False, 'allow_blank': True},
-            'document_type': {'required': False},
-        }
+        fields = ["file", "description", "title", "document_type"]
 
-    def validate_file(self, value):
-        """File hajmini tekshirish (max 10MB)"""
-        max_size = 10 * 1024 * 1024  # 10 MB
-        if value.size > max_size:
-            raise serializers.ValidationError(
-                f"Fayl hajmi {max_size / (1024 * 1024)}MB dan oshmasligi kerak"
-            )
-        return value
+    def validate_file(self, file):
+        """Fayl hajmini tekshirish (max 10MB)"""
+        if file.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError("Fayl hajmi 10MB dan oshmasligi kerak.")
+        return file
 
     def create(self, validated_data):
-        """
-        ✅ Bemor va hamkorni kontekstdan olish
-        (upload_response view ichida context orqali yuboriladi)
-        """
         patient = self.context.get("patient")
         partner = self.context.get("partner")
-
         if not patient or not partner:
-            raise serializers.ValidationError("Patient yoki Partner kontekstdan topilmadi.")
+            raise serializers.ValidationError("Bemor yoki hamkor aniqlanmadi.")
 
         document = PartnerResponseDocument.objects.create(
             patient=patient,
@@ -272,7 +261,6 @@ class PartnerResponseUploadSerializer(serializers.ModelSerializer):
             **validated_data
         )
         return document
-
 
 # ===============================================================
 # PARTNER PROFILE SERIALIZER
@@ -309,5 +297,4 @@ class PartnerProfileSerializer(serializers.ModelSerializer):
             'active_patients',
             'created_at',
         ]
-
 
