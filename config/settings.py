@@ -1,46 +1,48 @@
 # ===============================================================
-# SETTINGS.PY - LOCAL VA PRODUCTION UCHUN
+# DJANGO SETTINGS – MEDMAPP PROJECT (PRODUCTION READY)
 # ===============================================================
 import os
-from datetime import timedelta
 from pathlib import Path
+from datetime import timedelta
 import dj_database_url
 from django.utils.translation import gettext_lazy as _
 
+# ===============================================================
+# 🔧 BASE SETTINGS
+# ===============================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-key")
 
-# ==========================
-# 🔐 SECURITY SETTINGS
-# ==========================
-SECRET_KEY = "django-insecure-2_yzlz!b-z%j+p4e^^^!ewhmg%5r==5u)24t*s+j^xun80s14_"
-
-# Environment detection
-IS_PRODUCTION = os.environ.get('ENVIRONMENT') == 'production'
-DEBUG = not IS_PRODUCTION  # Production'da False, local'da True
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
+IS_PRODUCTION = ENVIRONMENT == "production"
+DEBUG = not IS_PRODUCTION
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
     "medmapp-1pjj.onrender.com",
+    "med-mapp-admin.vercel.app",
 ]
 
-# ==========================
-# 🌍 INTERNATIONALIZATION
-# ==========================
-LANGUAGES = [
-    ("uz", _("Uzbek")),
-    ("ru", _("Russian")),
-    ("en", _("English")),
-]
+# ===============================================================
+# 🌍 LANGUAGE & TIMEZONE
+# ===============================================================
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# ==========================
+LANGUAGES = [
+    ("uz", _("Uzbek")),
+    ("ru", _("Russian")),
+    ("en", _("English")),
+]
+
+# ===============================================================
 # 📦 INSTALLED APPS
-# ==========================
+# ===============================================================
 INSTALLED_APPS = [
+    # Core
     "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -48,29 +50,32 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # Third-party
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "drf_yasg",
     "channels",
-    # custom apps
-    "patients.apps.PatientsConfig",
+
+    # Custom apps
     "authentication",
+    "patients",
     "applications",
     "services",
     "consultations",
-    "reviews.apps.ReviewsConfig",
-    "core.apps.CoreConfig",
+    "reviews",
+    "core",
     "partners",
 ]
 
-# ==========================
-# ⚙️ MIDDLEWARE
-# ==========================
+# ===============================================================
+# ⚙️ MIDDLEWARE (CORS eng tepada!)
+# ===============================================================
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # 🔥 Birinchi bo‘lishi kerak!
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -82,9 +87,9 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 
-# ==========================
+# ===============================================================
 # 🧩 TEMPLATES
-# ==========================
+# ===============================================================
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -100,112 +105,108 @@ TEMPLATES = [
     },
 ]
 
-# ==========================
+# ===============================================================
 # 🚀 ASGI / CHANNELS
-# ==========================
+# ===============================================================
 ASGI_APPLICATION = "config.asgi.application"
 WSGI_APPLICATION = "config.wsgi.application"
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
-        },
+        "CONFIG": {"hosts": [("127.0.0.1", 6379)]},
     },
 }
 
-# ==========================
-# 🧠 AUTH / USERS
-# ==========================
+# ===============================================================
+# 👤 AUTH / USERS
+# ===============================================================
 AUTH_USER_MODEL = "authentication.CustomUser"
 
-# ==========================
-# 💾 DATABASE - LOCAL VA PRODUCTION
-# ==========================
-    # Production database (Render)
-DATABASE_URL = "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
+# ===============================================================
+# 💾 DATABASE (Render PostgreSQL)
+# ===============================================================
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
+)
+
 DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=True
+        ssl_require=True,
     )
 }
-# else:
-#     # Local database (SQLite yoki PostgreSQL)
-#     # VARIANT A: SQLite (oson)
-#     DATABASES = {
-#         'default': {
-#             'ENGINE': 'django.db.backends.sqlite3',
-#             'NAME': BASE_DIR / 'db.sqlite3',
-#         }
-#     }
 
-    # VARIANT B: Local PostgreSQL (agar o'rnatilgan bo'lsa)
-    # DATABASES = {
-    #     'default': {
-    #         'ENGINE': 'django.db.backends.postgresql',
-    #         'NAME': 'medmapp_local',
-    #         'USER': 'postgres',
-    #         'PASSWORD': 'postgres',
-    #         'HOST': 'localhost',
-    #         'PORT': '5432',
-    #     }
-    # }
-
-# ==========================
-# 🔐 JWT AUTH
-# ==========================
+# ===============================================================
+# 🔐 JWT AUTHENTICATION
+# ===============================================================
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": "your-secret-key",
+    "SIGNING_KEY": SECRET_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# ==========================
+# ===============================================================
 # 🌐 CORS / CSRF CONFIG
-# ==========================
-if IS_PRODUCTION:
-    CORS_ALLOWED_ORIGINS = [
-        "https://med-mapp-admin.vercel.app",
-    ]
-else:
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+# ===============================================================
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_HEADERS = True
 
-CORS_ALLOW_HEADERS = [
-    "content-type",
-    "authorization",
+CORS_ALLOWED_ORIGINS = [
+    "https://med-mapp-admin.vercel.app",
+    "https://medmapp-1pjj.onrender.com",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://medmapp-1pjj.onrender.com",
     "https://med-mapp-admin.vercel.app",
+    "https://medmapp-1pjj.onrender.com",
 ]
 
-# ==========================
-# 📄 STATIC / MEDIA
-# ==========================
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+# 🔄 agar boshqa subdomenlar (vercel preview) bo‘lsa
+CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.vercel\.app$"]
+
+# ===============================================================
+# 📄 STATIC / MEDIA FILES
+# ===============================================================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-
-# Media papkani yaratish
 os.makedirs(MEDIA_ROOT, exist_ok=True)
 
-# ==========================
+# ===============================================================
 # 🧭 REST FRAMEWORK
-# ==========================
+# ===============================================================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -215,9 +216,9 @@ REST_FRAMEWORK = {
     ],
 }
 
-# ==========================
-# 📘 SWAGGER
-# ==========================
+# ===============================================================
+# 📘 SWAGGER SETTINGS
+# ===============================================================
 SWAGGER_SETTINGS = {
     "SECURITY_DEFINITIONS": {
         "Bearer": {
