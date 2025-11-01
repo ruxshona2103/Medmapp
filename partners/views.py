@@ -17,7 +17,7 @@ from .serializers import (
     PartnerPatientListSerializer,
     PartnerPatientDetailSerializer,
     PartnerResponseUploadSerializer,
-    PartnerProfileSerializer,
+    PartnerProfileSerializer, PartnerResponseSerializer,
 )
 from .permissions import IsPartnerUser
 from patients.models import Patient, PatientHistory, PatientDocument
@@ -162,3 +162,100 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
     @swagger_auto_schema(operation_summary="✏️ Profilni yangilash", tags=["partner"])
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
+
+
+# ===============================================================
+# 📨 PARTNER JAVOB XATLARI (ALOHIDA GET API)
+# ===============================================================
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+
+from .permissions import IsPartnerUser
+from .models import PartnerResponseDocument
+from .serializers import PartnerResponseSerializer
+
+
+class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    📩 Hamkor yuborgan javob xatlari (PartnerResponseDocument)
+    """
+
+    permission_classes = [IsAuthenticated, IsPartnerUser]
+    serializer_class = PartnerResponseSerializer
+    queryset = PartnerResponseDocument.objects.select_related("patient", "partner").order_by("-uploaded_at")
+
+    @swagger_auto_schema(
+        tags=["partner"],
+        operation_summary="📄 Hamkor yuborgan barcha javob xatlari ro‘yxati",
+        operation_description="""
+        Hamkor tomonidan yuklangan barcha javob xatlari.
+
+        🔍 Qo‘shimcha filter:
+        - **patient_id**: faqat shu bemorning javoblarini olish uchun (masalan: `/partner/responses/?patient_id=3`)
+        """,
+        manual_parameters=[
+            openapi.Parameter(
+                "patient_id",
+                openapi.IN_QUERY,
+                description="Bemor ID (filter uchun, ixtiyoriy)",
+                type=openapi.TYPE_INTEGER,
+                required=False,
+            ),
+        ],
+        responses={200: PartnerResponseSerializer(many=True)},
+    )
+    def list(self, request, *args, **kwargs):
+        partner = getattr(request.user, "partner_profile", None)
+        if not partner:
+            return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = self.queryset.filter(partner=partner)
+
+        # 🔍 Filter by patient_id (optional)
+        patient_id = request.query_params.get("patient_id")
+        if patient_id:
+            qs = qs.filter(patient_id=patient_id)
+
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page or qs, many=True, context={"request": request})
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        tags=["partner"],
+        operation_summary="📄 Bitta javob xatini olish (ID orqali)",
+        operation_description="Bitta `PartnerResponseDocument` ma’lumotini ID orqali olish",
+        responses={200: PartnerResponseSerializer()},
+    )
+    def retrieve(self, request, *args, **kwargs):
+        partner = getattr(request.user, "partner_profile", None)
+        if not partner:
+            return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
+
+        instance = self.get_object()
+        if instance.partner != partner:
+            return Response({"detail": "Bu fayl sizga tegishli emas."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = self.get_serializer(instance, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ✅ ALOHIDA: Bemor ID bo‘yicha response olish
+    @swagger_auto_schema(
+        tags=["partner"],
+        operation_summary="👤 Bitta bemorga tegishli barcha javob xatlari",
+        operation_description="Masalan: `/partner/responses/patient/5/` → ID=5 bemorning barcha javoblari",
+        responses={200: PartnerResponseSerializer(many=True)},
+    )
+    def patient_responses(self, request, patient_id=None):
+        partner = getattr(request.user, "partner_profile", None)
+        if not partner:
+            return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = self.queryset.filter(partner=partner, patient_id=patient_id)
+        serializer = self.get_serializer(qs, many=True, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
