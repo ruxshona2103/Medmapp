@@ -231,6 +231,9 @@ class PartnerStageChangeSerializer(serializers.Serializer):
 # ===============================================================
 # SERIALIZER: Professional optimized response upload
 # ===============================================================
+from rest_framework import serializers
+from .models import PartnerResponseDocument
+
 
 class PartnerResponseUploadSerializer(serializers.ModelSerializer):
     """
@@ -261,6 +264,36 @@ class PartnerResponseUploadSerializer(serializers.ModelSerializer):
             **validated_data
         )
         return document
+
+class PartnerResponseSerializer(serializers.ModelSerializer):
+    """
+    📄 Hamkor yuborgan javob xatini ko‘rish uchun to‘liq serializer
+    """
+    file_url = serializers.SerializerMethodField()
+    partner_name = serializers.CharField(source="partner.name", read_only=True)
+    patient_name = serializers.CharField(source="patient.full_name", read_only=True)
+    patient_id = serializers.IntegerField(source="patient.id", read_only=True)  # ✅ bemor ID
+
+    class Meta:
+        model = PartnerResponseDocument
+        fields = [
+            "id",
+            "file_url",
+            "description",
+            "title",
+            "document_type",
+            "patient_id",
+            "patient_name",
+            "partner_name",
+            "uploaded_at",  # ✅ modeldagi haqiqiy sana
+        ]
+
+    def get_file_url(self, obj):
+        request = self.context.get("request")
+        if obj.file and request:
+            return request.build_absolute_uri(obj.file.url)
+        return None
+
 
 # ===============================================================
 # PARTNER PROFILE SERIALIZER
