@@ -1,20 +1,12 @@
 from django.db import models
 from rest_framework.decorators import action
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import generics, permissions, viewsets, filters
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import (
-    VisaRequest,
-    TransferRequest,
-    TranslatorRequest,
-    SimCardRequest,
     Hotel,
-    Booking,
 )
 from .serializers import (
     VisaRequestSerializer,
@@ -28,13 +20,6 @@ from .permissions import IsOwner, HotelPermission, BookingPermission
 
 
 class HotelViewSet(viewsets.ModelViewSet):
-    """
-    Mehmonxonalar ro'yxati.
-    Filtrlar:
-    - search: nomi yoki manzili bo‘yicha
-    - min_price, max_price: narx oralig‘ida
-    - stars: yulduzlar soni bo‘yicha
-    """
     queryset = Hotel.objects.all().order_by("name")
     serializer_class = HotelSerializer
     permission_classes = [HotelPermission]
@@ -296,20 +281,6 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-
-from applications.models import Patient
-from services.models import (
-    VisaRequest, TransferRequest, TranslatorRequest, SimCardRequest, Booking
-)
-from services.serializers import (
-    VisaRequestSerializer, TransferRequestSerializer,
-    TranslatorRequestSerializer, SimCardRequestSerializer, BookingSerializer
-)
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
