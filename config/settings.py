@@ -67,7 +67,7 @@ INSTALLED_APPS = [
     "applications",
     "services",
     "consultations",
-    "reviews",
+    "clinics",
     "core",
     "partners",
 ]
