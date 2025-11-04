@@ -139,16 +139,12 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({"detail": "Fayl muvaffaqiyatli yuklandi."}, status=status.HTTP_201_CREATED)
 
 
-# ===============================================================
-# 👤 PARTNER PROFILE
-# ===============================================================
 class PartnerProfileView(generics.RetrieveUpdateAPIView):
     """
     👤 Hamkor profili
     GET /api/v1/partner/profile/
     PATCH /api/v1/partner/profile/
     """
-
     permission_classes = [IsAuthenticated, IsPartnerUser]
     serializer_class = PartnerProfileSerializer
 
