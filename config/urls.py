@@ -32,7 +32,7 @@ urlpatterns = [
     path("api/", include("applications.urls")),
     path("api/", include("core.urls")),
     path("api/", include("consultations.urls")),
-    path("api/", include("reviews.urls")),
+    path("api/", include("clinics.urls")),
     path("api/", include("patients.urls")),
     path("api/", include("partners.urls")),
 
