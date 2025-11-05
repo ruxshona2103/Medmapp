@@ -1,5 +1,3 @@
-# clinics/views.py
-from django.db.models import Prefetch
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,8 +5,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import (
-    Country, City, Accreditation, Specialty, Clinic, Doctor, TreatmentPrice,
-    ClinicInfrastructure, ClinicImage, NearbyStay
+    Country, City, Accreditation, Specialty, Clinic
 )
 from .serializers import (
     CountrySerializer, CitySerializer, AccreditationSerializer, SpecialtySerializer,
@@ -140,53 +137,3 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(NearbyStaySerializer(qs, many=True, context={"request": request}).data)
 
 
-# ======================================
-# 🔹 Qo‘shimcha GET endpointlar
-# ======================================
-
-class DoctorViewSet(viewsets.ReadOnlyModelViewSet):
-    """Shifokorlar (faqat GET)"""
-    serializer_class = DoctorSerializer
-
-    def get_queryset(self):
-        qs = Doctor.objects.select_related("clinic", "specialty").all().order_by("order", "id")
-        clinic = self.request.query_params.get("clinic")
-        specialty = self.request.query_params.get("specialty")
-        if clinic:
-            qs = qs.filter(clinic_id=clinic)
-        if specialty:
-            qs = qs.filter(specialty_id=specialty)
-        return qs
-
-
-class TreatmentPriceViewSet(viewsets.ReadOnlyModelViewSet):
-    """Narxlar (faqat GET)"""
-    serializer_class = TreatmentPriceSerializer
-
-    def get_queryset(self):
-        qs = TreatmentPrice.objects.select_related("clinic", "specialty").all()
-        clinic = self.request.query_params.get("clinic")
-        specialty = self.request.query_params.get("specialty")
-        if clinic:
-            qs = qs.filter(clinic_id=clinic)
-        if specialty:
-            qs = qs.filter(specialty_id=specialty)
-        return qs.filter(is_active=True)
-
-
-class ClinicImageViewSet(viewsets.ReadOnlyModelViewSet):
-    """Galereya (faqat GET)"""
-    queryset = ClinicImage.objects.select_related("clinic").all()
-    serializer_class = ClinicImageSerializer
-
-
-class ClinicInfrastructureViewSet(viewsets.ReadOnlyModelViewSet):
-    """Infratuzilma (faqat GET)"""
-    queryset = ClinicInfrastructure.objects.select_related("clinic").all()
-    serializer_class = ClinicInfrastructureSerializer
-
-
-class NearbyStayViewSet(viewsets.ReadOnlyModelViewSet):
-    """Yaqin joylashgan mehmonxonalar (faqat GET)"""
-    queryset = NearbyStay.objects.select_related("clinic").all()
-    serializer_class = NearbyStaySerializer
