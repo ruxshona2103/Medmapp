@@ -152,6 +152,11 @@ class MessageSerializer(serializers.ModelSerializer):
     conversation = serializers.PrimaryKeyRelatedField(
         queryset=Conversation.objects.all()
     )
+    reply_to = serializers.PrimaryKeyRelatedField(
+        queryset=Message.objects.all(),
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = Message
@@ -252,14 +257,12 @@ class MessageSerializer(serializers.ModelSerializer):
 
         if message_type == "file":
             request = self.context.get("request")
-            files = (
-                request.FILES.getlist("attachments")
-                if request and request.FILES
-                else []
-            )
+            files = []
+            if request and request.FILES:
+                files = request.FILES.getlist("attachments") or request.FILES.getlist("files")
             if not files:
                 raise serializers.ValidationError(
-                    {"attachments": "Fayl xabar uchun kamida bitta fayl kerak"}
+                    {"files": "Fayl xabar uchun kamida bitta fayl kerak"}
                 )
 
         reply_to_id = attrs.get("reply_to")
@@ -298,7 +301,10 @@ class MessageSerializer(serializers.ModelSerializer):
                 conversation=conversation, **validated_data
             )
 
+            # 'attachments' yoki 'files' nomidan fayllarni olish
             files = request.FILES.getlist("attachments", [])
+            if not files:
+                files = request.FILES.getlist("files", [])
             attachments_data = []
 
             for file in files:
