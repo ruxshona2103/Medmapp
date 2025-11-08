@@ -46,8 +46,15 @@ class SpecialtySerializer(serializers.ModelSerializer):
     def get_title(self, o): return tr(o, "title")
     def get_description(self, o): return tr(o, "description")
     def get_icon_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.icon.url) if o.icon and r else None
+        try:
+            if o.icon:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.icon.url)
+                return o.icon.url
+        except:
+            pass
+        return None
 
 
 # === Doctors & Prices ===
@@ -61,8 +68,15 @@ class DoctorSerializer(serializers.ModelSerializer):
                   "experience_years", "work_time", "is_top", "order"]
     def get_title(self, o): return {"uz": o.title_uz, "ru": o.title_ru, "en": o.title_en}
     def get_photo_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.photo.url) if o.photo and r else None
+        try:
+            if o.photo:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.photo.url)
+                return o.photo.url
+        except:
+            pass
+        return None
 
 class TreatmentPriceSerializer(serializers.ModelSerializer):
     procedure = serializers.SerializerMethodField()
@@ -83,8 +97,15 @@ class ClinicInfrastructureSerializer(serializers.ModelSerializer):
         fields = ["id", "text", "image_url", "order"]
     def get_text(self, o): return {"uz": o.text_uz, "ru": o.text_ru, "en": o.text_en}
     def get_image_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.image.url) if o.image and r else None
+        try:
+            if o.image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.image.url)
+                return o.image.url
+        except:
+            pass
+        return None
 
 class ClinicImageSerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()
@@ -96,8 +117,15 @@ class ClinicImageSerializer(serializers.ModelSerializer):
     def get_title(self, o): return tr(o, "title")
     def get_description(self, o): return tr(o, "description")
     def get_image_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.image.url) if o.image and r else None
+        try:
+            if o.image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.image.url)
+                return o.image.url
+        except:
+            pass
+        return None
 
 class NearbyStaySerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()
@@ -109,8 +137,15 @@ class NearbyStaySerializer(serializers.ModelSerializer):
     def get_title(self, o): return tr(o, "title")
     def get_description(self, o): return tr(o, "description")
     def get_image_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.image.url) if o.image and r else None
+        try:
+            if o.image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.image.url)
+                return o.image.url
+        except:
+            pass
+        return None
 
 
 # === Clinic cards & details ===
@@ -121,20 +156,28 @@ class ClinicCardSerializer(serializers.ModelSerializer):
     country = CountrySerializer(read_only=True)
     cover_url = serializers.SerializerMethodField()
     accreditations = AccreditationSerializer(many=True, read_only=True)
+    specialties = SpecialtySerializer(many=True, read_only=True)
 
     class Meta:
         model = Clinic
         fields = [
             "id", "slug", "title", "address", "city", "country",
-            "cover_url", "rating", "accreditations",
+            "cover_url", "rating", "accreditations", "specialties",
         ]
 
     def get_title(self, o): return tr(o, "title")
     def get_address(self, o):
         return {"uz": o.address_uz, "ru": o.address_ru, "en": o.address_en}
     def get_cover_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.cover_image.url) if o.cover_image and r else None
+        try:
+            if o.cover_image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.cover_image.url)
+                return o.cover_image.url
+        except:
+            pass
+        return None
 
 
 class ClinicDetailSerializer(serializers.ModelSerializer):
@@ -145,6 +188,7 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
     country = CountrySerializer(read_only=True)
     background_url = serializers.SerializerMethodField()
     accreditations = AccreditationSerializer(many=True, read_only=True)
+    specialties = SpecialtySerializer(many=True, read_only=True)
 
     # nested short blocks
     top_doctors = serializers.SerializerMethodField()
@@ -157,7 +201,7 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
             "city", "country",
             "background_url", "rating", "founded_year",
             "bed_count", "department_count", "operating_room_count",
-            "accreditations",
+            "accreditations", "specialties",
             "top_doctors", "top_prices",
         ]
 
@@ -166,8 +210,15 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
     def get_address(self, o):
         return {"uz": o.address_uz, "ru": o.address_ru, "en": o.address_en}
     def get_background_url(self, o):
-        r = self.context.get("request")
-        return r.build_absolute_uri(o.background_image.url) if o.background_image and r else None
+        try:
+            if o.background_image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.background_image.url)
+                return o.background_image.url
+        except:
+            pass
+        return None
 
     def get_top_doctors(self, o):
         qs = o.doctors.filter(is_top=True).order_by("order")[:3]
