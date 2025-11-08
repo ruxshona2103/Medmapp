@@ -44,11 +44,11 @@ urlpatterns = [
 ]
 
 # ===============================================================
-# MEDIA VA STATIC FILES (Development uchun)
+# MEDIA VA STATIC FILES
 # ===============================================================
-if settings.DEBUG:
-    # Media files (rasmlar, hujjatlar)
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Development uchun media files serve qilish
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-    # Static files (CSS, JS)
+# Development uchun static files serve qilish
+if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
