@@ -103,18 +103,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """
-        Ba’zi actionlar faqat login qilgan foydalanuvchiga ruxsat.
-        Qolganlariga default permissionlar ishlaydi (agar bor bo‘lsa).
+        Ba'zi actionlar faqat login qilgan foydalanuvchiga ruxsat.
+        Qolganlariga default permissionlar ishlaydi (agar bor bo'lsa).
         """
         if self.action in [
-            "get_messages",
-            "post_message",
+            "conversation_messages",
             "mark_read",
             "get_prescriptions",
             "get_summary",
             "get_files",
             "operator_mark_read",
-            "operator_conversation_messages",
         ]:
             return [IsAuthenticated()]
         return super().get_permissions()
@@ -405,11 +403,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     # -------------------------------------------------------
-    # GET /conversations/{id}/messages/
+    # GET/POST /conversations/{id}/messages/
     # -------------------------------------------------------
     @swagger_auto_schema(
+        methods=["get"],
         operation_summary="💬 Suhbatdagi xabarlar",
-        operation_description="Tanlangan suhbatga tegishli barcha xabarlarni qaytaradi. Faqat ishtirokchilar ko‘ra oladi.",
+        operation_description="Tanlangan suhbatga tegishli barcha xabarlarni qaytaradi. Faqat ishtirokchilar ko'ra oladi.",
         manual_parameters=[
             openapi.Parameter(
                 "since_id",
@@ -421,27 +420,23 @@ class ConversationViewSet(viewsets.ModelViewSet):
         responses={200: MessageSerializer(many=True)},
         tags=["conversations"],
     )
-    @action(detail=True, methods=["get"], url_path="messages")
-    def get_messages(self, request: Request, pk=None):
-        conversation = self.get_object()
-        context = {"request": request}
-        return self._get_messages(conversation, request, context)
-
-    # -------------------------------------------------------
-    # POST /conversations/{id}/messages/
-    # -------------------------------------------------------
     @swagger_auto_schema(
+        methods=["post"],
         operation_summary="✉️ Suhbatga xabar yuborish",
         operation_description="Tanlangan suhbatga yangi xabar yuboradi (matn, fayl, reply va h.k.).",
         request_body=MessageSerializer,
         responses={201: MessageSerializer},
         tags=["conversations"],
     )
-    @action(detail=True, methods=["post"], url_path="message")
-    def post_message(self, request: Request, pk=None):
+    @action(detail=True, methods=["get", "post"], url_path="messages")
+    def conversation_messages(self, request: Request, pk=None):
         conversation = self.get_object()
         context = {"request": request}
-        return self._post_message(conversation, request, context)
+
+        if request.method == "GET":
+            return self._get_messages(conversation, request, context)
+        elif request.method == "POST":
+            return self._post_message(conversation, request, context)
 
     # -------------------------------------------------------
     # POST /conversations/{id}/mark-read/
@@ -577,19 +572,26 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     # -------------------------------------------------------
-    # GET /conversations/{id}/files/
+    # GET/POST /conversations/{id}/files/
     # -------------------------------------------------------
     @swagger_auto_schema(
+        methods=["get"],
         operation_summary="📁 Suhbatdagi fayllar",
         operation_description="Suhbat davomida yuborilgan barcha fayllarni qaytaradi.",
         responses={200: AttachmentSerializer(many=True)},
         tags=["conversations"],
     )
-    @action(detail=True, methods=["get"], url_path="files")
+    @swagger_auto_schema(
+        methods=["post"],
+        operation_summary="📤 Suhbatga fayl yuborish",
+        operation_description="Suhbatga fayl yuboradi. Bir nechta fayl yuborish mumkin. Content-Type: multipart/form-data",
+        responses={201: MessageSerializer},
+        tags=["conversations"],
+    )
+    @action(detail=True, methods=["get", "post"], url_path="files")
     def get_files(self, request: Request, pk=None):
         try:
             conversation = self.get_object()
-            logger.debug(f"get_files called for conversation {conversation.id}")
 
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
@@ -600,21 +602,56 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     status=HTTP_403_FORBIDDEN,
                 )
 
-            attachments = (
-                Attachment.objects.filter(
-                    message__conversation=conversation,
-                    message__is_deleted=False,
+            if request.method == "GET":
+                logger.debug(f"get_files called for conversation {conversation.id}")
+                attachments = (
+                    Attachment.objects.filter(
+                        message__conversation=conversation,
+                        message__is_deleted=False,
+                    )
+                    .select_related("message", "uploaded_by")
                 )
-                .select_related("message", "uploaded_by")
-            )
 
-            serializer = AttachmentSerializer(attachments, many=True, context={"request": request})
-            logger.info(f"Retrieved {attachments.count()} files for conversation {conversation.id}")
-            return Response(serializer.data)
+                serializer = AttachmentSerializer(attachments, many=True, context={"request": request})
+                logger.info(f"Retrieved {attachments.count()} files for conversation {conversation.id}")
+                return Response(serializer.data)
+
+            elif request.method == "POST":
+                logger.debug(f"post_files called for conversation {conversation.id}")
+
+                files = request.FILES.getlist("files", [])
+                if not files:
+                    logger.warning("No files provided")
+                    return Response(
+                        {"detail": "Kamida bitta fayl yuborish kerak"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                content = request.data.get("content", "").strip()
+
+                # Fayl xabar yaratamiz
+                data = {
+                    "conversation": conversation.id,
+                    "type": "file",
+                    "content": content or "Fayl yuborildi",
+                }
+
+                # MessageSerializer orqali xabar yaratamiz
+                context = {"request": request}
+                serializer = MessageSerializer(data=data, context=context)
+
+                if serializer.is_valid():
+                    result = serializer.save()
+                    logger.info(f"File message created in conversation {conversation.id}")
+                    return Response(result, status=status.HTTP_201_CREATED)
+                else:
+                    logger.error(f"File message serializer errors: {serializer.errors}")
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         except Exception as e:
             logger.error(f"Error in get_files: {str(e)}", exc_info=True)
             return Response(
-                {"detail": f"Error retrieving files: {str(e)}"},
+                {"detail": f"Error with files: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -623,8 +660,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # (faqat operator uchun)
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="✅ Operator xabarlarni o‘qilgan qiladi",
-        operation_description="Operator sifatida shu suhbatdagi o‘qilmagan xabarlarni o‘qilgan qilib belgilaydi.",
+        operation_summary="✅ Operator xabarlarni o'qilgan qiladi",
+        operation_description="Operator sifatida shu suhbatdagi o'qilmagan xabarlarni o'qilgan qilib belgilaydi.",
         responses={200: openapi.Response("Messages marked as read by operator")},
         tags=["conversations"],
     )
@@ -672,122 +709,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
             logger.error(f"Error in operator_mark_read: {str(e)}", exc_info=True)
             return Response(
                 {"detail": f"Error marking messages as read: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    # -------------------------------------------------------
-    # /conversations/operator/<patient_id>/
-    # Operator – bemor bilan yozishadigan alohida endpoint
-    # GET – xabarlarni oladi
-    # POST – xabar yuboradi
-    # -------------------------------------------------------
-    @swagger_auto_schema(
-        methods=["get"],
-        operation_summary="👨‍💻 Operator – bemor suhbatini ko‘rish (GET)",
-        operation_description="Operator (yoki staff) berilgan patient_id bo‘yicha suhbat xabarlarini oladi. Agar suhbat bo‘lmasa – keyingi POST uni yaratadi.",
-        manual_parameters=[
-            openapi.Parameter(
-                "since_id",
-                openapi.IN_QUERY,
-                type=openapi.TYPE_INTEGER,
-                description="Shundan keyingi xabarlar",
-            )
-        ],
-        responses={200: MessageSerializer(many=True)},
-        tags=["conversations"],
-    )
-    @swagger_auto_schema(
-        methods=["post"],
-        operation_summary="👨‍💻 Operator – bemor suhbatiga xabar yuborish (POST)",
-        operation_description="Operator (yoki staff) bemor bilan alohida conversation ochib, xabar yuboradi. Agar conversation bo‘lmasa – avval yaratiladi.",
-        request_body=MessageSerializer,
-        responses={201: MessageSerializer},
-        tags=["conversations"],
-    )
-    @action(detail=False, methods=["get", "post"], url_path="operator/(?P<patient_id>[^/.]+)")
-    def operator_conversation_messages(self, request: Request, patient_id=None):
-        try:
-            logger.debug(f"operator_conversation_messages called for patient {patient_id}")
-
-            # ruxsat: faqat operator / staff
-            if not request.user.is_staff and not hasattr(request.user, "is_operator"):
-                logger.warning(f"User {request.user.id} is not authorized for operator actions")
-                return Response(
-                    {"detail": "Only operators can perform this action"},
-                    status=HTTP_403_FORBIDDEN,
-                )
-
-            # bu yerda bemor – bu User modeli ichidagi patient
-            patient = get_object_or_404(User, pk=patient_id)
-            logger.debug(f"Found patient: {patient.get_full_name()}")
-
-            # shu operator va shu patient o‘rtasida mavjud active suhbatni topamiz
-            conversation = (
-                Conversation.objects.filter(
-                    patient=patient,
-                    operator=request.user,
-                    is_active=True,
-                )
-                .order_by("-last_message_at")
-                .first()
-            )
-
-            # agar yo‘q bo‘lsa – yangisini yaratamiz
-            if not conversation:
-                logger.info(f"No active conversation found, creating new one for patient {patient_id}")
-                conversation = Conversation.objects.create(
-                    patient=patient,
-                    operator=request.user,
-                    created_by=request.user,
-                    title=(
-                        f"Operator conversation: "
-                        f"{patient.get_full_name() or patient.username or f'User {patient_id}'}"
-                    ),
-                    last_message_at=timezone.now(),
-                )
-                # bemorni participant qilamiz
-                Participant.objects.get_or_create(
-                    conversation=conversation,
-                    user=patient,
-                    defaults={"role": "patient", "joined_at": timezone.now()},
-                )
-                # operatorni ham participant qilamiz
-                Participant.objects.get_or_create(
-                    conversation=conversation,
-                    user=request.user,
-                    defaults={"role": "operator", "joined_at": timezone.now()},
-                )
-                # avtomatik welcome xabar
-                welcome_message = Message.objects.create(
-                    conversation=conversation,
-                    sender=request.user,
-                    type="system",
-                    content=(
-                        f"Hello! I am operator "
-                        f"{request.user.get_full_name() or request.user.username}. "
-                        f"Ready to assist you. How can I help?"
-                    ),
-                )
-                MessageReadStatus.objects.create(
-                    message=welcome_message,
-                    user=request.user,
-                    read_at=timezone.now(),
-                )
-                logger.info(f"Created conversation {conversation.id} with welcome message")
-
-            context = {"request": request}
-
-            if request.method == "GET":
-                # bemor-operator suhbatidagi xabarlarni olamiz
-                return self._get_messages(conversation, request, context)
-            elif request.method == "POST":
-                # shu suhbatga xabar yuboramiz
-                return self._post_message(conversation, request, context)
-
-        except Exception as e:
-            logger.error(f"Error in operator_conversation_messages: {str(e)}", exc_info=True)
-            return Response(
-                {"detail": f"Error in operator conversation: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
