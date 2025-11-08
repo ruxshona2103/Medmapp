@@ -14,13 +14,18 @@ class IsSuperAdminOrReadOnly(permissions.BasePermission):
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
-    queryset = Review.objects.select_related("patient").all()
     serializer_class = ReviewSerializer
     permission_classes = [IsSuperAdminOrReadOnly]
 
-    @swagger_auto_schema(operation_summary="Tasdiqlangan fikrlar ro‘yxati")
+    def get_queryset(self):
+        qs = Review.objects.select_related("patient").all()
+        # List uchun faqat tasdiqlangan sharhlar
+        if self.action == "list":
+            qs = qs.filter(is_approved=True)
+        return qs
+
+    @swagger_auto_schema(operation_summary="Tasdiqlangan fikrlar ro'yxati")
     def list(self, request, *args, **kwargs):
-        qs = self.get_queryset().filter(is_approved=True)
         return super().list(request, *args, **kwargs)
 
 
