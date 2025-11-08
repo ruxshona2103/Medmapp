@@ -1,5 +1,16 @@
 from rest_framework import serializers
-from .models import Review, BlogPost
+from .models import Review, BlogPost, BlogCategory
+
+
+# === Helper function ===
+def tr(obj, base: str):
+    """Return dict with all languages: {'uz':..., 'ru':..., 'en':...}"""
+    return {
+        "uz": getattr(obj, f"{base}_uz", None),
+        "ru": getattr(obj, f"{base}_ru", None),
+        "en": getattr(obj, f"{base}_en", None),
+    }
+
 
 # --------------------------------------------- REVIEWS --------------------------------------------------------
 class ReviewSerializer(serializers.ModelSerializer):
@@ -10,19 +21,55 @@ class ReviewSerializer(serializers.ModelSerializer):
         fields = ["id", "patient_full_name", "text", "is_approved", "created_at"]
 
 
+# --------------------------------------------- BLOG CATEGORY --------------------------------------------------
+class BlogCategorySerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BlogCategory
+        fields = ["id", "name"]
+
+    def get_name(self, obj):
+        return tr(obj, "name")
+
+
 # --------------------------------------------- BLOG -----------------------------------------------------------
 class BlogPostSerializer(serializers.ModelSerializer):
-    category_name = serializers.SerializerMethodField()
+    title = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    content = serializers.SerializerMethodField()
+    category = BlogCategorySerializer(read_only=True)
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = BlogPost
         fields = [
             "id",
-            "title_uz", "title_ru", "title_en",
-            "description_uz", "description_ru", "description_en",
-            "content_uz", "content_ru", "content_en",
-            "author", "image", "category_name", "created_at",
+            "title",
+            "description",
+            "content",
+            "author",
+            "image_url",
+            "category",
+            "created_at",
         ]
 
-    def get_category_name(self, obj):
-        return obj.category.name_uz if obj.category else None
+    def get_title(self, obj):
+        return tr(obj, "title")
+
+    def get_description(self, obj):
+        return tr(obj, "description")
+
+    def get_content(self, obj):
+        return tr(obj, "content")
+
+    def get_image_url(self, obj):
+        try:
+            if obj.image:
+                request = self.context.get("request")
+                if request:
+                    return request.build_absolute_uri(obj.image.url)
+                return obj.image.url
+        except:
+            pass
+        return None
