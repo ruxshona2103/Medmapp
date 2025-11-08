@@ -437,7 +437,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         responses={201: MessageSerializer},
         tags=["conversations"],
     )
-    @action(detail=True, methods=["post"], url_path="messages")
+    @action(detail=True, methods=["post"], url_path="message")
     def post_message(self, request: Request, pk=None):
         conversation = self.get_object()
         context = {"request": request}
