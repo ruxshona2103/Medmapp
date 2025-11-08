@@ -58,7 +58,7 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["title_uz", "title_ru", "title_en", "address_uz", "address_ru", "address_en"]
 
     def get_queryset(self):
-        qs = Clinic.objects.select_related("country", "city").prefetch_related("accreditations")
+        qs = Clinic.objects.select_related("country", "city").prefetch_related("accreditations", "specialties")
         # filter params
         country = self.request.query_params.get("country")
         city = self.request.query_params.get("city")
@@ -69,7 +69,7 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(city_id=city)
         if specialty:
             qs = qs.filter(specialties__id=specialty)
-        return qs.filter(is_active=True).order_by("-rating", "title_uz")
+        return qs.filter(is_active=True).order_by("-rating", "title_uz").distinct()
 
     def get_serializer_class(self):
         return ClinicDetailSerializer if self.action == "retrieve" else ClinicCardSerializer
