@@ -1,25 +1,8 @@
-"""
-conversations/views.py
-
-Ushbu modulda suhbat (Conversation) va xabarlar (Message) bilan ishlashga oid
-barcha API-lar joylashgan.
-
-Asosiy vazifalar:
-- foydalanuvchining o‘ziga tegishli suhbatlarini olish (list)
-- yangi suhbat yaratish (create)
-- bitta suhbatdagi xabarlarni olish / yuborish
-- xabarlarni o‘qilgan deb belgilash
-- suhbatga bog‘liq retseptlar (Prescription) va shifokor xulosasi (DoctorSummary) ni olish
-- operatorlar uchun alohida endpoint (operator bemor bo‘yicha suhbat yuritishi)
-"""
-
 import logging
 from django.db.models import Q
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import get_object_or_404
-
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -29,7 +12,6 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.status import HTTP_403_FORBIDDEN, HTTP_400_BAD_REQUEST
-
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -38,7 +20,6 @@ from .models import (
     Message,
     Attachment,
     MessageReadStatus,
-    Participant,
     Prescription,
     DoctorSummary,
 )
@@ -46,26 +27,16 @@ from .serializers import (
     ConversationSerializer,
     ConversationCreateSerializer,
     MessageSerializer,
-    MessageReadStatusSerializer,
     PrescriptionSerializer,
     DoctorSummarySerializer,
     AttachmentSerializer,
-    UserTinySerializer,
 )
 
 logger = logging.getLogger(__name__)
+
 User = get_user_model()
 
-
-# ===========================================================
-# Pagination – hamma joyda bir xil bo‘lishi uchun
-# ===========================================================
 class StandardResultsSetPagination(PageNumberPagination):
-    """
-    Oddiy pagination sozlamasi.
-    Default = 20 ta element.
-    ?page=2&pagesize=50 ko‘rinishida ishlaydi.
-    """
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
@@ -75,23 +46,6 @@ class StandardResultsSetPagination(PageNumberPagination):
 # Conversation (suhbat) ViewSet
 # ===========================================================
 class ConversationViewSet(viewsets.ModelViewSet):
-    """
-    Suhbatlarni boshqarish uchun ViewSet.
-
-    Nimalarni qiladi:
-    - list: foydalanuvchi qatnashayotgan barcha suhbatlarni qaytaradi
-    - create: yangi suhbat yaratadi
-    - retrieve: bitta suhbatni qaytaradi
-    - messages (GET): shu suhbatdagi xabarlarni qaytaradi
-    - messages (POST): shu suhbatga xabar yuboradi
-    - mark-read: shu suhbatdagi xabarlarni o‘qilgan qilib belgilaydi
-    - prescriptions: shu suhbatga bog‘langan retseptlarni qaytaradi
-    - summary: shu suhbatga bog‘langan shifokor xulosasini qaytaradi
-    - files: shu suhbatdagi barcha fayllarni qaytaradi
-    - operator/...: operatorlar bemor bilan yozishishi uchun alohida endpoint
-    """
-
-    # asosiy queryset
     queryset = (
         Conversation.objects
         .select_related("patient", "operator", "created_by")
@@ -102,10 +56,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def get_permissions(self):
-        """
-        Ba'zi actionlar faqat login qilgan foydalanuvchiga ruxsat.
-        Qolganlariga default permissionlar ishlaydi (agar bor bo'lsa).
-        """
         if self.action in [
             "conversation_messages",
             "mark_read",
@@ -118,14 +68,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        """
-        Foydalanuvchi faqat o‘zi qatnashayotgan yoki o‘zi yaratgan
-        suhbatlarini ko‘rishi kerak.
-
-        Qo‘shimcha filtrlash:
-        - ?date=2025-11-01  -> shu kundagi suhbatlar
-        - ?status=yangi|jarayonda|yakunlangan
-        """
         user = self.request.user
         if not user.is_authenticated:
             logger.debug("User is not authenticated, returning empty queryset")
@@ -143,7 +85,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
             .distinct()
         )
 
-        # 📅 Sana bo‘yicha filter
+        # 📅 Sana bo'yicha filter
         filter_date = self.request.query_params.get("date")
         if filter_date:
             try:
@@ -152,7 +94,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 logger.warning(f"Invalid date filter: {filter_date}, error: {e}")
 
-        # ⚙️ Status bo‘yicha filter
+        # ⚙️ Status bo'yicha filter
         status_filter = self.request.query_params.get("status")
         if status_filter and status_filter.lower() != "barchasi":
             status_mapping = {
@@ -162,20 +104,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
             }
             mapped_status = status_mapping.get(status_filter.lower(), status_filter.lower())
 
-            # Agar Conversation modelida status field bo‘lsa
+            # Agar Conversation modelida status field bo'lsa
             if hasattr(Conversation, "status"):
                 qs = qs.filter(status=mapped_status)
                 logger.debug(f"Filtering conversations by status: {mapped_status}")
             else:
-                # Modelda status bo‘lmasa – taxminiy filter
+                # Modelda status bo'lmasa – taxminiy filter
                 if mapped_status == "new":
-                    # o‘qilmagan xabarlari bor
+                    # o'qilmagan xabarlari bor
                     qs = qs.filter(messages__read_status__isnull=True).exclude(messages__sender=user).distinct()
                 elif mapped_status == "in_progress":
                     # oxirgi 24 soatda yozilgan
                     qs = qs.filter(last_message_at__gte=timezone.now() - timezone.timedelta(days=1))
                 elif mapped_status == "completed":
-                    # hammasi o‘qilgan
+                    # hammasi o'qilgan
                     qs = qs.filter(
                         ~Q(messages__read_status__isnull=True) | Q(messages__sender=user)
                     ).distinct()
@@ -183,11 +125,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
         return qs.order_by("-last_message_at")
 
     def get_object(self):
-        """
-        Bitta suhbatni olish.
-        Agar bir xil PK bilan bir nechta active suhbat bo‘lib qolsa
-        (nazariy holat) – eng so‘nggisini oldik.
-        """
         try:
             logger.debug(f"Attempting to get conversation with pk={self.kwargs['pk']}")
             obj = Conversation.objects.get(pk=self.kwargs["pk"], is_active=True)
@@ -211,9 +148,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
             raise
 
     def get_serializer_class(self):
-        """
-        create paytida boshqa serializer ishlatamiz.
-        """
         if self.action == "create":
             return ConversationCreateSerializer
         return super().get_serializer_class()
@@ -222,24 +156,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # LIST
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="📋 Suhbatlar ro‘yxati",
+        operation_summary="📋 Suhbatlar ro'yxati",
         operation_description=(
-            "Login bo‘lgan foydalanuvchiga tegishli barcha suhbatlarni qaytaradi. "
-            "Sana (`?date=YYYY-MM-DD`) va status (`?status=yangi`) bo‘yicha filter bor."
+            "Login bo'lgan foydalanuvchiga tegishli barcha suhbatlarni qaytaradi. "
+            "Sana (`?date=YYYY-MM-DD`) va status (`?status=yangi`) bo'yicha filter bor."
         ),
         manual_parameters=[
             openapi.Parameter(
                 "date",
                 openapi.IN_QUERY,
                 type=openapi.TYPE_STRING,
-                description="Sana bo‘yicha filter (YYYY-MM-DD). Masalan: 2025-10-22",
+                description="Sana bo'yicha filter (YYYY-MM-DD). Masalan: 2025-10-22",
             ),
             openapi.Parameter(
                 "status",
                 openapi.IN_QUERY,
                 type=openapi.TYPE_STRING,
                 enum=["barchasi", "yangi", "jarayonda", "yakunlangan"],
-                description="Status bo‘yicha filter",
+                description="Status bo'yicha filter",
             ),
             openapi.Parameter(
                 "page",
@@ -282,7 +216,18 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # -------------------------------------------------------
     # CREATE
     # -------------------------------------------------------
-    def create(self, request: Request, *args, **kwargs):
+    @swagger_auto_schema(
+        operation_summary="➕ Yangi suhbat yaratish",
+        operation_description="Yangi suhbat yaratish (operator bemor bilan, yoki foydalanuvchi support bilan)",
+        request_body=ConversationCreateSerializer,
+        responses={
+            201: ConversationSerializer,
+            400: "Bad request - Validation error",
+            500: "Internal server error"
+        },
+        tags=["conversations"],
+    )
+    def create(self, request, *args, **kwargs):
         """
         Yangi suhbat yaratish.
         Odatda operator bemor bilan, yoki foydalanuvchi support bilan.
@@ -318,7 +263,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         """
         Ichki funksiya.
         Bitta suhbatdagi xabarlarni qaytaradi.
-        Faqat suhbat ishtirokchilari ko‘ra oladi.
+        Faqat suhbat ishtirokchilari ko'ra oladi.
         """
         try:
             logger.debug(f"Getting messages for conversation {conversation.id}, user {request.user.id}")
@@ -429,7 +374,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         tags=["conversations"],
     )
     @action(detail=True, methods=["get", "post"], url_path="messages")
-    def conversation_messages(self, request: Request, pk=None):
+    def conversation_messages(self, request, pk=None):
         conversation = self.get_object()
         context = {"request": request}
 
@@ -442,13 +387,13 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # POST /conversations/{id}/mark-read/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="✅ Suhbatdagi xabarlarni o‘qilgan qilish",
-        operation_description="Suhbatdagi o‘qilmagan xabarlarni shu foydalanuvchi uchun o‘qilgan deb belgilaydi.",
+        operation_summary="✅ Suhbatdagi xabarlarni o'qilgan qilish",
+        operation_description="Suhbatdagi o'qilmagan xabarlarni shu foydalanuvchi uchun o'qilgan deb belgilaydi.",
         responses={200: openapi.Response("Messages marked as read")},
         tags=["conversations"],
     )
     @action(detail=True, methods=["post"], url_path="mark-read")
-    def mark_read(self, request: Request, pk=None):
+    def mark_read(self, request, pk=None):
         try:
             conversation = self.get_object()
             logger.debug(f"mark_read called for conversation {conversation.id}")
@@ -462,7 +407,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     status=HTTP_403_FORBIDDEN,
                 )
 
-            # o‘zi yozmagan va hali o‘qilmagan xabarlar
+            # o'zi yozmagan va hali o'qilmagan xabarlar
             unread_messages = (
                 conversation.messages.exclude(sender=request.user)
                 .exclude(read_status__user=request.user)
@@ -499,12 +444,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # -------------------------------------------------------
     @swagger_auto_schema(
         operation_summary="💊 Suhbatga tegishli retseptlar",
-        operation_description="Tanlangan suhbatga biriktirilgan retseptlar ro‘yxati.",
+        operation_description="Tanlangan suhbatga biriktirilgan retseptlar ro'yxati.",
         responses={200: PrescriptionSerializer(many=True)},
         tags=["conversations"],
     )
     @action(detail=True, methods=["get"], url_path="prescriptions")
-    def get_prescriptions(self, request: Request, pk=None):
+    def get_prescriptions(self, request, pk=None):
         try:
             conversation = self.get_object()
             logger.debug(f"get_prescriptions called for conversation {conversation.id}")
@@ -534,12 +479,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # -------------------------------------------------------
     @swagger_auto_schema(
         operation_summary="📝 Doktor xulosasi",
-        operation_description="Suhbat bo‘yicha shifokor tomonidan yozilgan xulosani qaytaradi.",
+        operation_description="Suhbat bo'yicha shifokor tomonidan yozilgan xulosani qaytaradi.",
         responses={200: DoctorSummarySerializer()},
         tags=["conversations"],
     )
     @action(detail=True, methods=["get"], url_path="summary")
-    def get_summary(self, request: Request, pk=None):
+    def get_summary(self, request, pk=None):
         try:
             conversation = self.get_object()
             logger.debug(f"get_summary called for conversation {conversation.id}")
@@ -575,24 +520,61 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # GET/POST /conversations/{id}/files/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        methods=["get"],
-        operation_summary="📁 Suhbatdagi fayllar",
-        operation_description="Suhbat davomida yuborilgan barcha fayllarni qaytaradi.",
-        responses={200: AttachmentSerializer(many=True)},
+        methods=['get'],
+        operation_summary="📁 Suhbatdagi fayllar ro'yxati",
+        operation_description="Tanlangan suhbatga yuklangan barcha fayllarni qaytaradi.",
+        responses={
+            200: openapi.Response(
+                description="List of attachments",
+                schema=AttachmentSerializer(many=True)
+            ),
+            403: "Forbidden - Not a participant"
+        },
         tags=["conversations"],
     )
     @swagger_auto_schema(
-        methods=["post"],
-        operation_summary="📤 Suhbatga fayl yuborish",
-        operation_description="Suhbatga fayl yuboradi. Bir nechta fayl yuborish mumkin. Content-Type: multipart/form-data",
-        responses={201: MessageSerializer},
+        methods=['post'],
+        operation_summary="📤 Suhbatga fayl yuklash",
+        operation_description="Bir yoki bir nechta faylni suhbatga yuklaydi. Content maydoni ixtiyoriy.",
+        consumes=['multipart/form-data'],
+        manual_parameters=[
+            openapi.Parameter(
+                'files',
+                openapi.IN_FORM,
+                description="Yuklanadigan fayllar (bir nechta fayl yuklash mumkin)",
+                type=openapi.TYPE_FILE,
+                required=True
+            ),
+            openapi.Parameter(
+                'content',
+                openapi.IN_FORM,
+                description="Fayl uchun ixtiyoriy xabar matni",
+                type=openapi.TYPE_STRING,
+                required=False
+            ),
+        ],
+        responses={
+            201: openapi.Response(
+                description="Fayllar muvaffaqiyatli yuklandi",
+                schema=MessageSerializer
+            ),
+            400: "Bad request - Fayl yuborilmadi",
+            403: "Forbidden - Siz bu suhbat ishtirokchisi emassiz",
+            500: "Internal server error"
+        },
         tags=["conversations"],
     )
-    @action(detail=True, methods=["get", "post"], url_path="files")
-    def get_files(self, request: Request, pk=None):
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="files",
+        parser_classes=[MultiPartParser, FormParser]
+    )
+    def get_files(self, request, pk=None):
         try:
             conversation = self.get_object()
 
+            # Ruxsat tekshirish
             if not conversation.participants.filter(user=request.user).exists():
                 logger.warning(
                     f"User {request.user.id} is not a participant in conversation {conversation.id}"
@@ -610,6 +592,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
                         message__is_deleted=False,
                     )
                     .select_related("message", "uploaded_by")
+                    .order_by("-created_at")
                 )
 
                 serializer = AttachmentSerializer(attachments, many=True, context={"request": request})
@@ -666,7 +649,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         tags=["conversations"],
     )
     @action(detail=True, methods=["post"], url_path="operator-mark-read")
-    def operator_mark_read(self, request: Request, pk=None):
+    def operator_mark_read(self, request, pk=None):
         try:
             conversation = self.get_object()
             logger.debug(f"operator_mark_read called for conversation {conversation.id}")
@@ -711,8 +694,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 {"detail": f"Error marking messages as read: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-
 # ===========================================================
 # Message ViewSet – alohida xabar bilan ishlash
 # ===========================================================
