@@ -440,6 +440,65 @@ class ConversationViewSet(viewsets.ModelViewSet):
             )
 
     # -------------------------------------------------------
+    # GET /conversations/my/
+    # Authenticated user o‘ziga tegishli conversationlarni oladi
+    # -------------------------------------------------------
+    @swagger_auto_schema(
+        operation_summary="🧑‍💻 Foydalanuvchining suhbatlari",
+        operation_description=(
+                "JWT token orqali login qilingan foydalanuvchi o‘z ishtirok etgan "
+                "barcha suhbatlarni ko‘radi (Conversation list)."
+        ),
+        manual_parameters=[
+            openapi.Parameter(
+                "page",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifa raqami",
+            ),
+            openapi.Parameter(
+                "page_size",
+                openapi.IN_QUERY,
+                type=openapi.TYPE_INTEGER,
+                description="Sahifadagi elementlar soni (max 100)",
+            ),
+        ],
+        responses={200: ConversationSerializer(many=True)},
+        tags=["conversations"],
+    )
+    @action(detail=False, methods=["get"], url_path="my")
+    def my_conversations(self, request):
+        user = request.user
+
+        # ✅ Auth required
+        if not user.is_authenticated:
+            return Response(
+                {"detail": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # ✅ Faqat o‘zi ishtirok etgan conversation lar
+        qs = (
+            Conversation.objects.filter(
+                participants__user=user,
+                is_active=True
+            )
+            .distinct()
+            .select_related("patient", "operator", "created_by")
+            .prefetch_related("participants")
+            .order_by("-last_message_at")
+        )
+
+        # ✅ Pagination
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = ConversationSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(serializer.data)
+
+        serializer = ConversationSerializer(qs, many=True, context={"request": request})
+        return Response(serializer.data)
+
+    # -------------------------------------------------------
     # GET /conversations/{id}/prescriptions/
     # -------------------------------------------------------
     @swagger_auto_schema(
@@ -694,6 +753,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 {"detail": f"Error marking messages as read: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+
 # ===========================================================
 # Message ViewSet – alohida xabar bilan ishlash
 # ===========================================================
