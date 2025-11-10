@@ -141,6 +141,83 @@ class StageViewSet(viewsets.ModelViewSet):
 
         return Response({"detail": "Tartib muvaffaqiyatli yangilandi."}, status=status.HTTP_200_OK)
 
+    @swagger_auto_schema(
+        method="post",
+        operation_summary="🔄 Patient stage’ini o‘zgartirish",
+        operation_description=(
+                "Bir vaqtning o'zida patient_id, stage_id va comment yuboriladi.\n\n"
+                "**Request body:**\n"
+                "```\n"
+                "{\n"
+                "   \"patient_id\": 12,\n"
+                "   \"stage_id\": 3,\n"
+                "   \"comment\": \"Hujjatlar tayyor\"\n"
+                "}\n"
+                "```\n"
+                "✅ Faqat authenticated userlar ishlata oladi."
+        ),
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["patient_id", "stage_id"],
+            properties={
+                "patient_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "stage_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING),
+            },
+        ),
+        responses={200: "Stage muvaffaqiyatli o‘zgartirildi"},
+        tags=["stages"],
+    )
+    @action(detail=False, methods=["post"], url_path="change-stage")
+    def change_stage(self, request):
+        patient_id = request.data.get("patient_id")
+        stage_id = request.data.get("stage_id")
+        comment = request.data.get("comment", "")
+
+        # ✅ Validate
+        if not patient_id or not stage_id:
+            return Response(
+                {"detail": "patient_id va stage_id kiritilishi shart"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ✅ Patient topish
+        try:
+            patient = Patient.objects.get(id=patient_id)
+        except Patient.DoesNotExist:
+            return Response(
+                {"detail": "Bunday patient mavjud emas"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ✅ Stage topish
+        try:
+            stage = Stage.objects.get(id=stage_id)
+        except Stage.DoesNotExist:
+            return Response(
+                {"detail": "Bunday stage mavjud emas"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ✅ Yangilash
+        old_stage = patient.stage
+        patient.stage = stage
+        patient.save()
+
+        # ✅ (Optional) comment bo‘lsa historyga yozish uchun joy
+        # StageHistory.objects.create(...)
+
+        return Response(
+            {
+                "detail": "Stage muvaffaqiyatli o‘zgartirildi",
+                "patient_id": patient_id,
+                "old_stage": old_stage.id if old_stage else None,
+                "new_stage": stage.id,
+                "comment": comment,
+            },
+            status=status.HTTP_200_OK,
+        )
+
 
 # ===============================================================
 # 🏷️ TAG VIEWSET
