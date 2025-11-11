@@ -1,53 +1,57 @@
+# patients/signals.py
 from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
-from .models import Patient
-from .utils import get_default_stage, get_default_tag
+
+from patients.models import Patient, PatientHistory
+from core.models import Stage, Tag
 
 User = get_user_model()
 
 
-@receiver(post_save, sender=settings.AUTH_USER_MODEL)
-def create_patient_for_user(sender, instance, created, **kwargs):
-    if created and instance.role == "patient":
-        Patient.objects.create(
-            user=instance,
-            full_name=instance.first_name + " " + instance.last_name,
-            phone_number=instance.phone_number,
-            gender="Erkak",
-        )
+def get_default_stage():
+    return Stage.objects.order_by("id").first()
+
+
+def get_default_tag():
+    return Tag.objects.order_by("id").first()
 
 
 @receiver(post_save, sender=User)
-def create_patient_on_user_register(sender, instance: User, created, **kwargs):
-    """Yangi ro‘yxatdan o‘tgan 'patient' uchun avtomatik Patient yozuvini yaratadi."""
-    if not created or getattr(instance, "role", None) != "patient":
+def create_patient_profile(sender, instance, created, **kwargs):
+    """
+    ✅ Faqat role='patient' bo'lgan user uchun PatientProfile yaratadi.
+    ✅ Partner, admin, operator — hech narsa yaratmaydi.
+    """
+    if not created or instance.role != "patient":
+        return
+
+    # ✅ Superadmin yoki tizim yaratgan bo‘lsa — created_by shunga yoziladi
+    creator = User.objects.filter(role="superadmin").first()
+
+    # ✅ Allaqachon Patient mavjud bo‘lsa – o‘tkazib yuboramiz
+    if hasattr(instance, "patient_profile"):
         return
 
     stage = get_default_stage()
-    tag = get_default_tag()  # yoki None, agar teg kerak bo‘lmasa
+    tag = get_default_tag()
 
-    patient, was_created = Patient.objects.get_or_create(
-        created_by=instance,
-        defaults={
-            "full_name": instance.get_full_name() or instance.username,
-            "phone_number": getattr(instance, "phone_number", "") or "",
-            "email": instance.email or "",
-            "gender": "Erkak",
-            "stage": stage,
-            "tag": tag,
-            "source": "Register",
-        },
+    patient = Patient.objects.create(
+        user=instance,
+        full_name=instance.get_full_name() or instance.phone_number,
+        phone_number=instance.phone_number,
+        email=instance.email or "",
+        gender="Erkak",
+        stage=stage,
+        tag=tag,
+        created_by=creator,
     )
 
-    # Agar bu bemor yangidan yaratilgan bo‘lsa — tarixga yozuv qo‘shish mumkin
-    if was_created:
-        from applications.models import Stage
-        from applications.models import Tag
-        from patients.models import PatientHistory
-        PatientHistory.objects.create(
-            patient=patient,
-            author=instance,
-            comment="Mijoz ro‘yxatdan o‘tdi va avtomatik tarzda ‘Yangi’ bosqichga joylashtirildi."
-        )
+    # ✅ Tarixga yozuv
+    PatientHistory.objects.create(
+        patient=patient,
+        author=creator,
+        comment="Avtomatik patient profili yaratildi.",
+    )
+    print("patient profii yaratildi")

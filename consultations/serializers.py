@@ -13,6 +13,7 @@ from .models import (
     Prescription,
     DoctorSummary,
 )
+from patients.models import Patient
 
 User = get_user_model()
 
@@ -31,17 +32,22 @@ class UserTinySerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         try:
             return obj.get_full_name()
-        except:
-            return obj.phone_number
+        except Exception:
+            return getattr(obj, 'phone_number', str(obj))
 
     def get_avatar_url(self, obj):
         avatar_fields = ["avatar", "photo", "profile_picture"]
         request = self.context.get("request")
+        if not request:
+            return None
         for field in avatar_fields:
             if hasattr(obj, field):
                 avatar = getattr(obj, field)
                 if avatar:
-                    return request.build_absolute_uri(avatar.url)
+                    try:
+                        return request.build_absolute_uri(avatar.url)
+                    except Exception:
+                        pass
         return None
 
 
@@ -65,11 +71,19 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     def get_file_url(self, obj):
         request = self.context.get("request")
-        return request.build_absolute_uri(obj.file.url) if obj.file else None
+        if not request or not obj.file:
+            return None
+        try:
+            return request.build_absolute_uri(obj.file.url)
+        except Exception:
+            return None
 
     def get_uploader_role(self, obj):
-        part = obj.message.conversation.participants.filter(user=obj.uploaded_by).first()
-        return part.role if part else "unknown"
+        try:
+            part = obj.message.conversation.participants.filter(user=obj.uploaded_by).first()
+            return part.role if part else "unknown"
+        except Exception:
+            return "unknown"
 
     def get_preview_url(self, obj):
         if obj.file_type in ["image", "video"]:
@@ -78,11 +92,12 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     def get_formatted_size(self, obj):
         size = obj.size
-        for unit in ["B","KB","MB","GB"]:
+        for unit in ["B", "KB", "MB", "GB"]:
             if size < 1024:
                 return f"{size:.1f} {unit}"
             size /= 1024
         return f"{size:.1f} TB"
+
 
 # ========================================
 # ✅ PRESCRIPTION SERIALIZER
@@ -97,9 +112,16 @@ class PrescriptionSerializer(serializers.ModelSerializer):
 # ✅ DOCTOR SUMMARY SERIALIZER
 # ========================================
 class DoctorSummarySerializer(serializers.ModelSerializer):
+    operator_name = serializers.SerializerMethodField()
+
     class Meta:
         model = DoctorSummary
         fields = "__all__"
+
+    def get_operator_name(self, obj):
+        if obj.operator:
+            return obj.operator.get_full_name()
+        return None
 
 
 # ========================================
@@ -206,6 +228,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
         return message
 
+
 # ========================================
 # ✅ CONVERSATION LIST SERIALIZER
 # ========================================
@@ -229,95 +252,120 @@ class ConversationSerializer(serializers.ModelSerializer):
         )
 
     def get_last_message(self, obj):
-        msg = obj.messages.order_by("-id").first()
-        return MessageSerializer(msg, context=self.context).data if msg else None
+        try:
+            msg = obj.messages.order_by("-id").first()
+            return MessageSerializer(msg, context=self.context).data if msg else None
+        except Exception:
+            return None
 
     def get_last_message_preview(self, obj):
-        msg = obj.messages.order_by("-id").first()
-        if not msg:
+        try:
+            msg = obj.messages.order_by("-id").first()
+            if not msg:
+                return "Suhbat boshlanmadi"
+            if msg.type == "file":
+                f = msg.attachments.first()
+                return f"Fayl: {f.original_name}" if f else "Fayl yuborilgan"
+            return msg.content[:50] + "..." if msg.content and len(msg.content) > 50 else (msg.content or "")
+        except Exception:
             return "Suhbat boshlanmadi"
-        if msg.type == "file":
-            f = msg.attachments.first()
-            return f"Fayl: {f.original_name}" if f else "Fayl yuborilgan"
-        return msg.content[:50] + "..." if msg.content and len(msg.content) > 50 else msg.content
 
     def get_unread_count(self, obj):
-        user = self.context["request"].user
-        return obj.messages.filter(
-            is_deleted=False
-        ).exclude(
-            read_statuses__user=user
-        ).exclude(
-            sender=user
-        ).count()
+        try:
+            user = self.context["request"].user
+            return obj.messages.filter(
+                is_deleted=False
+            ).exclude(
+                read_statuses__user=user
+            ).exclude(
+                sender=user
+            ).count()
+        except Exception:
+            return 0
 
     def get_participants(self, obj):
-        parts = obj.participants.select_related("user").all()
-        return [
-            {
-                "id": p.user.id,
-                "role": p.role,
-                "full_name": p.user.get_full_name(),
-                "avatar": UserTinySerializer(p.user, context=self.context).data["avatar_url"],
-                "last_seen": p.last_seen_at.isoformat() if p.last_seen_at else None
-            }
-            for p in parts
-        ]
+        try:
+            parts = obj.participants.select_related("user").all()
+            return [
+                {
+                    "id": p.user.id,
+                    "role": p.role,
+                    "full_name": p.user.get_full_name(),
+                    "avatar": UserTinySerializer(p.user, context=self.context).data.get("avatar_url"),
+                    "last_seen": p.last_seen_at.isoformat() if p.last_seen_at else None
+                }
+                for p in parts
+            ]
+        except Exception:
+            return []
 
-
-# ========================================
-# ✅ CONVERSATION CREATE SERIALIZER
-# ========================================
-class ConversationCreateSerializer(serializers.ModelSerializer):
-    patient_id = serializers.IntegerField(write_only=True)
-    operator_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-
-    class Meta:
-        model = Conversation
-        fields = ("id", "title", "patient_id", "operator_id")
+class ConversationCreateSerializer(serializers.Serializer):
+    title = serializers.CharField(required=False, allow_blank=True)
+    patient_profile_id = serializers.IntegerField(write_only=True)
+    operator_id = serializers.IntegerField(write_only=True, required=False)
 
     def validate(self, attrs):
         req = self.context["request"]
 
-        patient_user = User.objects.filter(id=attrs["patient_id"]).first()
-        if not patient_user:
-            raise ValidationError("Bemor topilmadi")
+        # ✅ PATIENT PROFILNI TEKSHIRAMIZ
+        try:
+            patient_profile = Patient.objects.get(id=attrs["patient_profile_id"])
+        except Patient.DoesNotExist:
+            raise serializers.ValidationError({
+                "patient_profile_id": "Bunday patient mavjud emas"
+            })
 
-        if not Patient.objects.filter(user=patient_user).exists():
-            raise ValidationError("Bu user bemor emas")
+        if not patient_profile.user:
+            raise serializers.ValidationError({
+                "patient_profile_id": "Bu patientga bog‘langan user topilmadi"
+            })
 
-        if attrs.get("operator_id"):
-            operator = User.objects.filter(id=attrs["operator_id"], is_staff=True).first()
-            if not operator:
-                raise ValidationError("Operator topilmadi yoki staff emas")
-        else:
-            attrs["operator_id"] = req.user.id
+        # ✅ OPERATOR (default → request.user)
+        operator_id = attrs.get("operator_id") or req.user.id
+        try:
+            operator = User.objects.get(id=operator_id)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"operator_id": "Operator topilmadi"})
 
+        attrs["patient_profile"] = patient_profile
+        attrs["operator"] = operator
         return attrs
 
     def create(self, validated_data):
         req = self.context["request"]
 
-        patient_user = User.objects.get(id=validated_data.pop("patient_id"))
-        patient_profile = patient_user.patient_profile
-        operator = User.objects.get(id=validated_data.pop("operator_id"))
+        patient_profile = validated_data["patient_profile"]
+        operator = validated_data["operator"]
+        title = validated_data.get("title") or f"{patient_profile.full_name} bilan suhbat"
 
+        # ✅ Mavjud suhbat bor-yo‘q tekshiramiz
         conv, created = Conversation.objects.get_or_create(
             patient=patient_profile,
             operator=operator,
+            is_active=True,
             defaults={
+                "title": title,
                 "created_by": req.user,
-                "title": validated_data.get("title") or f"{patient_user.get_full_name()} bilan suhbat",
-                "last_message_at": timezone.now(),
             }
         )
 
-        if created:
-            Participant.objects.create(conversation=conv, user=patient_user, role="patient")
-            Participant.objects.create(conversation=conv, user=operator, role="operator")
+        # ✅ ✅ ✅ FIX — PARTICIPANT yaratish (muammo shu joyda edi!)
+        from consultations.models import Participant
+
+        Participant.objects.get_or_create(
+            conversation=conv,
+            user=patient_profile.user,
+            defaults={"role": "patient"}
+        )
+
+        Participant.objects.get_or_create(
+            conversation=conv,
+            user=operator,
+            defaults={"role": "operator"}
+        )
+        # ✅ ✅ ✅ FIX tugadi
 
         return conv
-
 
 # ========================================
 # ✅ MESSAGE READ STATUS SERIALIZER

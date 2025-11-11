@@ -159,3 +159,6 @@ class MedicalFile(models.Model):
 
     def __str__(self):
         return f"File for {self.user.phone_number} at {self.uploaded_at.isoformat()}"
+
+
+

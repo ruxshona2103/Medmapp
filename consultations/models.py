@@ -10,7 +10,7 @@ from django.utils import timezone
 import os
 import mimetypes
 
-# 🔗 Bemor profili – endi asosiy bog'lanish shu model orqali
+# 🔗 Bemor profili
 from patients.models import Patient
 
 User = get_user_model()
@@ -30,14 +30,14 @@ class Conversation(models.Model):
         related_name="created_conversations",
     )
 
-    # ❗ MUHIM: endi patient -> Patient (User emas)
+    # Patient model bilan bog'lanish
     patient = models.ForeignKey(
         "patients.Patient",
         on_delete=models.PROTECT,
         related_name="conversations",
     )
 
-    # Operator – baribir User bo'lib qoladi
+    # Operator – User bo'lib qoladi
     operator = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -51,7 +51,6 @@ class Conversation(models.Model):
 
     class Meta:
         constraints = [
-            # 🔒 Faol suhbat uchun 1 bemor–1 operator unikal (faqat is_active=True holatida)
             models.UniqueConstraint(
                 fields=["patient", "operator"],
                 name="uniq_patient_operator_conversation",
@@ -66,20 +65,19 @@ class Conversation(models.Model):
         ]
 
     def __str__(self) -> str:
+        patient_name = getattr(self.patient, 'get_full_name', lambda: str(self.patient))()
         if self.operator:
-            return self.title or f"Operator suhbat #{self.pk} - {self.patient}"
-        return self.title or f"Suhbat #{self.pk} - {self.patient}"
+            return self.title or f"Operator suhbat #{self.pk} - {patient_name}"
+        return self.title or f"Suhbat #{self.pk} - {patient_name}"
 
     def save(self, *args, **kwargs):
-        # Operator kiritilmagan bo'lsa, created_by ni operator sifatida qo'yamiz
         if not self.operator and self.created_by:
             self.operator = self.created_by
         super().save(*args, **kwargs)
 
-    # Qo‘shimcha qulaylik: bemorning userini olish (agar patient.user mavjud bo‘lsa)
     @property
     def patient_user(self):
-        # Patient modeliga qo'ygan OneToOne user bog'lanishi orqali (agar mavjud)
+        """Patient modelidagi user ni qaytaradi"""
         return getattr(self.patient, "user", None)
 
 
@@ -97,7 +95,6 @@ class Participant(models.Model):
         Conversation, on_delete=models.CASCADE, related_name="participants"
     )
 
-    # Ishtirokchi – autentifikatsiyadagi foydalanuvchi (User)
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="chat_participations"
     )
@@ -226,7 +223,7 @@ class Attachment(models.Model):
             else:
                 self.mime_type = self.mime_type or "application/octet-stream"
 
-            # Fayl turini MIME’dan kelib chiqib belgilash
+            # Fayl turini MIME'dan kelib chiqib belgilash
             if self.mime_type.startswith("image/"):
                 self.file_type = "image"
             elif self.mime_type.startswith("video/"):
@@ -251,6 +248,9 @@ class Attachment(models.Model):
                 return f"{size:.1f} {unit}"
             size /= 1024.0
         return f"{size:.1f} TB"
+
+    def __str__(self):
+        return f"{self.original_name} - {self.formatted_size}"
 
 
 # ---------- O'qilgan xabarlar tracking'i ----------
@@ -298,7 +298,7 @@ class ConversationStats(models.Model):
         return f"Stats for {self.conversation}"
 
 
-# ---------- Yangi Modellar ----------
+# ---------- Retsept ----------
 class Prescription(models.Model):
     """
     Retsept model.
@@ -313,9 +313,10 @@ class Prescription(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.name
+        return f"{self.name} - {self.conversation}"
 
 
+# ---------- Shifokor xulosasi ----------
 class DoctorSummary(models.Model):
     """
     Shifokor xulosasi model.
