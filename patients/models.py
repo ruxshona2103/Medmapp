@@ -4,9 +4,12 @@ from django.core.validators import FileExtensionValidator
 from core.models import Stage, Tag
 from partners.models import Partner
 
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 class Patient(models.Model):
         GENDER_CHOICES = [("Erkak", "Erkak"), ("Ayol", "Ayol")]
+        user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='patient_profile', null=True, blank=True)
         full_name = models.CharField(max_length=200)
         date_of_birth = models.DateField(null=True, blank=True)
         gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
@@ -40,6 +43,14 @@ class Patient(models.Model):
             verbose_name='Yangilangan vaqt',
             help_text='Oxirgi yangilanish vaqti'
         )
+
+        def get_full_name(self):
+            """User bilan bir xil full_name funksiyasi, admin va serializerlarda ishlashi uchun."""
+            if self.full_name:
+                return self.full_name
+            if self.user and (self.user.first_name or self.user.last_name):
+                return f"{self.user.first_name or ''} {self.user.last_name or ''}".strip()
+            return self.user.phone_number if self.user else "Noma'lum bemor"
 
         class Meta:
             verbose_name = 'Bemor'

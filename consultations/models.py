@@ -2,6 +2,7 @@
 Consultations app modellari.
 Bu faylda suhbat, xabarlar, ishtirokchilar va fayllar modellari aniqlanadi.
 """
+
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.db import models
@@ -9,7 +10,11 @@ from django.utils import timezone
 import os
 import mimetypes
 
+# 🔗 Bemor profili – endi asosiy bog'lanish shu model orqali
+from patients.models import Patient
+
 User = get_user_model()
+
 
 # ---------- Asosiy suhbat ----------
 class Conversation(models.Model):
@@ -17,14 +22,22 @@ class Conversation(models.Model):
     Suhbat model. Bemor va operator o'rtasidagi suhbatni ifodalaydi.
     """
     title = models.CharField(max_length=255, blank=True)
+
+    # Kim yaratgan (odatda operator)
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,  # 👈 string o‘rniga settings.AUTH_USER_MODEL ishlat
+        settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
-        related_name="created_conversations"
+        related_name="created_conversations",
     )
+
+    # ❗ MUHIM: endi patient -> Patient (User emas)
     patient = models.ForeignKey(
-        User, on_delete=models.PROTECT, related_name="patient_conversations"
+        "patients.Patient",
+        on_delete=models.PROTECT,
+        related_name="conversations",
     )
+
+    # Operator – baribir User bo'lib qoladi
     operator = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -32,11 +45,13 @@ class Conversation(models.Model):
         null=True,
         blank=True,
     )
+
     is_active = models.BooleanField(default=True)
     last_message_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
+            # 🔒 Faol suhbat uchun 1 bemor–1 operator unikal (faqat is_active=True holatida)
             models.UniqueConstraint(
                 fields=["patient", "operator"],
                 name="uniq_patient_operator_conversation",
@@ -56,9 +71,17 @@ class Conversation(models.Model):
         return self.title or f"Suhbat #{self.pk} - {self.patient}"
 
     def save(self, *args, **kwargs):
+        # Operator kiritilmagan bo'lsa, created_by ni operator sifatida qo'yamiz
         if not self.operator and self.created_by:
             self.operator = self.created_by
         super().save(*args, **kwargs)
+
+    # Qo‘shimcha qulaylik: bemorning userini olish (agar patient.user mavjud bo‘lsa)
+    @property
+    def patient_user(self):
+        # Patient modeliga qo'ygan OneToOne user bog'lanishi orqali (agar mavjud)
+        return getattr(self.patient, "user", None)
+
 
 # ---------- Ishtirokchilar ----------
 class Participant(models.Model):
@@ -69,12 +92,16 @@ class Participant(models.Model):
         ("patient", "Patient"),
         ("operator", "Operator"),
     )
+
     conversation = models.ForeignKey(
         Conversation, on_delete=models.CASCADE, related_name="participants"
     )
+
+    # Ishtirokchi – autentifikatsiyadagi foydalanuvchi (User)
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="chat_participations"
     )
+
     role = models.CharField(max_length=16, choices=ROLE_CHOICES)
     joined_at = models.DateTimeField(default=timezone.now)
     is_muted = models.BooleanField(default=False)
@@ -89,6 +116,7 @@ class Participant(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} in {self.conversation} as {self.role}"
+
 
 # ---------- Xabarlar ----------
 class Message(models.Model):
@@ -135,6 +163,7 @@ class Message(models.Model):
             self.is_read_by_recipient = True
             self.save(update_fields=["is_read_by_recipient"])
 
+
 # ---------- Fayllar ----------
 def chat_upload_path(instance: "Attachment", filename: str) -> str:
     """
@@ -144,9 +173,7 @@ def chat_upload_path(instance: "Attachment", filename: str) -> str:
     safe_filename = "".join(
         c for c in os.path.basename(filename) if c.isalnum() or c in "._-"
     )
-    return (
-        f"chat_attachments/{timestamp:%Y/%m/%d}/{instance.message_id}_{safe_filename}"
-    )
+    return f"chat_attachments/{timestamp:%Y/%m/%d}/{instance.message_id}_{safe_filename}"
 
 
 class Attachment(models.Model):
@@ -189,34 +216,32 @@ class Attachment(models.Model):
             )
             if hasattr(self.file, "size"):
                 self.size = self.file.size
-            if not self.mime_type:
-                if hasattr(self.file, "content_type"):
-                    self.mime_type = self.file.content_type
-                elif self.original_name:
-                    self.mime_type, _ = mimetypes.guess_type(self.original_name)
-                    if not self.mime_type:
-                        self.mime_type = "application/octet-stream"
-            if not self.file_type:
-                if self.mime_type.startswith("image/"):
-                    self.file_type = "image"
-                elif self.mime_type.startswith("video/"):
-                    self.file_type = "video"
-                elif self.mime_type.startswith(
-                    (
-                        "application/pdf",
-                        "application/msword",
-                        "application/vnd.openxmlformats-officedocument",
-                    )
-                ):
-                    self.file_type = "document"
-                else:
-                    self.file_type = "other"
+
+            # MIME aniqlash
+            if hasattr(self.file, "content_type") and self.file.content_type:
+                self.mime_type = self.file.content_type
+            elif self.original_name:
+                guessed, _ = mimetypes.guess_type(self.original_name)
+                self.mime_type = guessed or "application/octet-stream"
+            else:
+                self.mime_type = self.mime_type or "application/octet-stream"
+
+            # Fayl turini MIME’dan kelib chiqib belgilash
+            if self.mime_type.startswith("image/"):
+                self.file_type = "image"
+            elif self.mime_type.startswith("video/"):
+                self.file_type = "video"
+            elif self.mime_type.startswith(
+                ("application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument")
+            ):
+                self.file_type = "document"
+            else:
+                self.file_type = "other"
+
         super().save(*args, **kwargs)
 
     def get_file_url(self):
-        if self.file:
-            return self.file.url
-        return None
+        return self.file.url if self.file else None
 
     @property
     def formatted_size(self):
@@ -226,6 +251,7 @@ class Attachment(models.Model):
                 return f"{size:.1f} {unit}"
             size /= 1024.0
         return f"{size:.1f} TB"
+
 
 # ---------- O'qilgan xabarlar tracking'i ----------
 class MessageReadStatus(models.Model):
@@ -251,6 +277,7 @@ class MessageReadStatus(models.Model):
     def __str__(self):
         return f"Msg#{self.message.id} read by {self.user} at {self.read_at}"
 
+
 # ---------- Suhbat statistikasi ----------
 class ConversationStats(models.Model):
     """
@@ -270,7 +297,8 @@ class ConversationStats(models.Model):
     def __str__(self):
         return f"Stats for {self.conversation}"
 
-# ---------- Yangi Modelar ----------
+
+# ---------- Yangi Modellar ----------
 class Prescription(models.Model):
     """
     Retsept model.
@@ -308,4 +336,4 @@ class DoctorSummary(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Summary for {self.conversation.title}"
+        return f"Summary for {self.conversation.title or self.conversation_id}"

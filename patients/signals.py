@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
@@ -5,6 +6,18 @@ from .models import Patient
 from .utils import get_default_stage, get_default_tag
 
 User = get_user_model()
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_patient_for_user(sender, instance, created, **kwargs):
+    if created and instance.role == "patient":
+        Patient.objects.create(
+            user=instance,
+            full_name=instance.first_name + " " + instance.last_name,
+            phone_number=instance.phone_number,
+            gender="Erkak",
+        )
+
 
 @receiver(post_save, sender=User)
 def create_patient_on_user_register(sender, instance: User, created, **kwargs):
