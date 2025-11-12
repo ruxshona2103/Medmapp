@@ -1,27 +1,26 @@
-# partners/signals.py
+from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
-from partners.models import Partner
+
+from .models import Partner
 
 User = get_user_model()
 
-
-@receiver(post_save, sender=User)
-def create_partner_profile(sender, instance, created, **kwargs):
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_partner_profile_on_user_create(sender, instance: User, created, **kwargs):
     """
-    ✅ Faqat role='partner' bo'lgan user uchun PartnerProfile yaratadi.
-    ✅ Patient, operator, admin — umuman tegilmaydi.
+    Faqat YANGI yaratilgan user va role == 'partner' bo'lganda
+    Partner profilini user=instance bilan yaratadi (idempotent).
     """
-    if not created or instance.role != "partner":
+    if not created:
+        return
+    if getattr(instance, "role", None) != "partner":
         return
 
-    # ✅ Allaqachon profil bo'lsa – yaratmaymiz
-    if hasattr(instance, "partner_profile"):
-        return
-
-    Partner.objects.create(
+    Partner.objects.get_or_create(
         user=instance,
-        name=instance.get_full_name() or instance.phone_number,
+        defaults={
+            # Modelingizda minimal talab qilingan maydonlar bo'lsa shu yerga qo‘ying.
+        },
     )
-    print("Partner profili yaratildi")

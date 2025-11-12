@@ -19,7 +19,7 @@ class Patient(models.Model):
         previous_diagnosis = models.TextField(blank=True)
         stage = models.ForeignKey(Stage, on_delete=models.SET_NULL, null=True, related_name="patients")
         tag = models.ForeignKey(Tag, on_delete=models.SET_NULL, null=True, blank=True, related_name="patients")
-        created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,related_name="created_patients")
+        created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,related_name="created_patients", null=True, blank=True)
         is_archived = models.BooleanField(default=False)
         archived_at = models.DateTimeField(null=True, blank=True)
         avatar = models.ImageField(upload_to='avatars/', blank=True, null=True, verbose_name="Profil rasmi")

@@ -61,7 +61,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "drf_yasg",
 
-    'authentication.apps.AuthenticationConfig',
+    'authentication',
     'patients.apps.PatientsConfig',
     'partners.apps.PartnersConfig',
     "applications",
