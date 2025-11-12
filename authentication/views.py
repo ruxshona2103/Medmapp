@@ -153,6 +153,7 @@ class OtpVerifyView(APIView):
                     safe_email = (getattr(user, "email", "") or "").strip()
 
                     patient = Patient.objects.create(
+                        user=user,
                         created_by=user,
                         full_name=safe_full_name,
                         phone_number=safe_phone,
