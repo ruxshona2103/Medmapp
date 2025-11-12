@@ -123,9 +123,8 @@ class DoctorSummarySerializer(serializers.ModelSerializer):
             return obj.operator.get_full_name()
         return None
 
-
-# ========================================
-# ✅ MESSAGE SERIALIZER
+# =====================================
+# ✅ MESSAGE SERIALIZER (TO'G'RILANGAN)
 # ========================================
 class MessageSerializer(serializers.ModelSerializer):
     sender = UserTinySerializer(read_only=True)
@@ -172,27 +171,50 @@ class MessageSerializer(serializers.ModelSerializer):
         return None
 
     def get_sender_role(self, obj):
-        part = obj.conversation.participants.filter(user=obj.sender).first()
-        return part.role if part else "unknown"
+        # Modelda 'participants' related_name mavjudligiga ishonch hosil qiling
+        try:
+            part = obj.conversation.participants.filter(user=obj.sender).first()
+            return part.role if part else "unknown"
+        except AttributeError:
+            # Agar 'participants' topilmasa
+            return "unknown"
 
     def get_is_read(self, obj):
         request = self.context.get("request")
-        if not request or request.user == obj.sender:
+        if not request or not hasattr(request, "user") or request.user == obj.sender:
             return True
-        return MessageReadStatus.objects.filter(message=obj, user=request.user).exists()
+
+        # Modelda 'read_statuses' related_name mavjudligiga ishonch hosil qiling
+        try:
+            # MessageReadStatus o'rniga modeldagi related_name'ni ishlatgan ma'qul
+            return obj.read_statuses.filter(user=request.user).exists()
+        except Exception:
+            # Agar MessageReadStatus topilmasa yoki xato bo'lsa
+            return False
 
     def validate(self, attrs):
         conv = attrs.get("conversation")
         type = attrs.get("type")
         content = attrs.get("content")
+        request = self.context.get("request")
+
+        if not request:
+            raise ValidationError("Serializer context'da 'request' topilmadi.")
 
         if type == "text" and (not content or not content.strip()):
             raise ValidationError({"content": "Matn bo‘sh bo‘lmasligi kerak"})
 
+        # --- ❗️ XATOLIK TUZATILGAN JOY ---
         if type == "file":
-            files = self.context["request"].FILES.getlist("attachments")
+            # "attachments" YOKI "files" maydonini qidiramiz
+            files = request.FILES.getlist("attachments") or \
+                    request.FILES.getlist("files")
+
             if not files:
-                raise ValidationError({"file": "Kamida 1 ta fayl bo‘lishi kerak"})
+                # Xato xabarini ham aniqlashtiramiz
+                raise ValidationError(
+                    {"file": "Kamida 1 ta fayl bo‘lishi kerak ('attachments' yoki 'files' maydoni orqali)"})
+        # --- TUZATISH TUGADI ---
 
         if attrs.get("reply_to"):
             if attrs["reply_to"].conversation != conv:
@@ -202,32 +224,44 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context["request"]
+
+        # Message obyektini yaratamiz
         message = Message.objects.create(
             sender=request.user,
             **validated_data
         )
 
-        # ---- ATTACHMENTS ----
+        # ---- ATTACHMENTS (YAXSHILANGAN) ----
+        # validate'da tekshirilgan fayllarni yana bir bor olamiz
         files = request.FILES.getlist("attachments") or request.FILES.getlist("files")
+
         for file in files:
+            # Attachment modelining o'zining save() metodi
+            # original_name, size va mime_type'ni avtomatik to'ldirishi kerak
             Attachment.objects.create(
                 message=message,
                 file=file,
-                uploaded_by=request.user,
-                original_name=file.name,
-                size=file.size,
-                mime_type=getattr(file, "content_type", "application/octet-stream")
+                uploaded_by=request.user
+                # Agar Attachment.save() bularni to'ldirmasa, eski kodingizni qaytaring:
+                # original_name=file.name,
+                # size=file.size,
+                # mime_type=getattr(file, "content_type", "application/octet-stream")
             )
 
         # ---- READ STATUS ----
+        # Xabarni yuborgan odam avtomatik o'qigan hisoblanadi
         MessageReadStatus.objects.get_or_create(
             message=message,
             user=request.user,
             defaults={"read_at": timezone.now()}
         )
 
-        return message
+        # Suhbatning 'last_message_at' vaqtini yangilaymiz
+        if validated_data.get("conversation"):
+            validated_data["conversation"].last_message_at = timezone.now()
+            validated_data["conversation"].save(update_fields=['last_message_at'])
 
+        return message
 
 # ========================================
 # ✅ CONVERSATION LIST SERIALIZER

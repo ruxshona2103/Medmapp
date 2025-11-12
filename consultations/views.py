@@ -24,7 +24,7 @@ from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.status import HTTP_403_FORBIDDEN, HTTP_400_BAD_REQUEST
+from rest_framework.status import HTTP_403_FORBIDDEN, HTTP_400_BAD_REQUEST, HTTP_201_CREATED
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -389,21 +389,34 @@ class ConversationViewSet(viewsets.ModelViewSet):
         responses={200: openapi.Response(description="List of attachments", schema=AttachmentSerializer(many=True)), 403: "Forbidden"},
         tags=["conversations"],
     )
+    # SIZ TAQDIM ETGAN KOD - XATOLIK TUZATILGAN HOLATDA
     @swagger_auto_schema(
         methods=['post'],
-        operation_summary="📤 Suhbatga fayl yuklash",
-        operation_description="Bir yoki bir nechta faylni suhbatga yuklaydi. Content ixtiyoriy.",
+        operation_summary="📤 Fayl yuklash",
         consumes=['multipart/form-data'],
         manual_parameters=[
-            openapi.Parameter('files', openapi.IN_FORM, description="Yuklanadigan fayllar (bir nechta fayl mumkin)", type=openapi.TYPE_FILE, required=True),
-            openapi.Parameter('content', openapi.IN_FORM, description="Fayl uchun ixtiyoriy xabar matni", type=openapi.TYPE_STRING, required=False),
+            openapi.Parameter(
+                name='files',  # Swagger'da "files" (ko'plikda) ko'rinadi
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_FILE,
+                description="Fayl(lar) — bir nechta yuborish uchun birma-bir tanlang",
+                required=True,
+            ),
+            openapi.Parameter(
+                name='content',
+                in_=openapi.IN_FORM,
+                type=openapi.TYPE_STRING,
+                description="Fayl uchun izoh",
+                required=False,
+            ),
         ],
-        responses={201: openapi.Response(description="Fayllar yuklandi", schema=MessageSerializer), 400: "Bad request", 403: "Forbidden", 500: "Internal server error"},
+        responses={201: MessageSerializer, 400: "Xato", 403: "Taqiqlangan"},
         tags=["conversations"],
     )
     @action(detail=True, methods=["get", "post"], url_path="files", parser_classes=[MultiPartParser, FormParser])
     def get_files(self, request, pk=None):
         conversation = self.get_object()
+
         if not conversation.participants.filter(user=request.user).exists():
             return Response({"detail": "You are not a participant in this conversation"}, status=HTTP_403_FORBIDDEN)
 
@@ -416,18 +429,43 @@ class ConversationViewSet(viewsets.ModelViewSet):
             ser = AttachmentSerializer(attachments, many=True, context={"request": request})
             return Response(ser.data)
 
+        # --- YECHIM SHU YERDA ---
+        # Avval "files" (ko'plik)ni qidiramiz
         files = request.FILES.getlist("files", [])
+
+        # Agar "files" bo'sh bo'lsa, "file" (birlik)ni qidiramiz
         if not files:
-            return Response({"detail": "Kamida bitta fayl yuborish kerak"}, status=status.HTTP_400_BAD_REQUEST)
+            file_singular = request.FILES.get("file")
+            if file_singular:
+                files = [file_singular]  # Uni ro'yxatga o'rab qo'yamiz
+
+        # Endi yakuniy tekshiruv
+        if not files:
+            return Response({"detail": "Kamida bitta fayl yuborish kerak ('file' yoki 'files' maydoni bo'lishi shart)"},
+                            status=HTTP_400_BAD_REQUEST)
+        # --- YECHIM TUGADI ---
 
         content = (request.data.get("content") or "").strip()
-        data = {"conversation": conversation.id, "type": "file", "content": content or "Fayl yuborildi"}
+
+        # Serializer'ga 'author'ni qo'shish uchun context'ga 'request' beriladi
+        # 'author' avtomatik 'request.user' bo'lishi serializer'da sozlanadi
+        data = {
+            "conversation": conversation.id,
+            "type": "file",
+            "content": content or "Fayl yuborildi"
+        }
 
         ser = MessageSerializer(data=data, context={"request": request})
         ser.is_valid(raise_exception=True)
-        msg = ser.save()
+        msg = ser.save()  # Bu yerda serializer'ning create() metodi ishlaydi
+
+        # Fayllarni bitta-bitta Attachment modeliga saqlaymiz
+        for f in files:
+            Attachment.objects.create(message=msg, uploaded_by=request.user, file=f)
+
         Conversation.objects.filter(pk=conversation.pk).update(last_message_at=timezone.now())
-        return Response(MessageSerializer(msg, context={"request": request}).data, status=status.HTTP_201_CREATED)
+        # Yangilangan 'msg' obyektini qaytaramiz (yangi 'attachments' bilan)
+        return Response(MessageSerializer(msg, context={"request": request}).data, status=HTTP_201_CREATED)
 
     # -------------------------------------------------------
     # POST /conversations/{id}/operator-mark-read/
