@@ -142,8 +142,9 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
 class PartnerProfileView(generics.RetrieveUpdateAPIView):
     """
     👤 Hamkor profili
-    GET /api/v1/partner/profile/
-    PATCH /api/v1/partner/profile/
+    GET /api/profile/
+    PUT /api/profile/
+    PATCH /api/profile/
     """
     permission_classes = [IsAuthenticated, IsPartnerUser]
     serializer_class = PartnerProfileSerializer
@@ -155,7 +156,11 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="✏️ Profilni yangilash", tags=["partner"])
+    @swagger_auto_schema(operation_summary="✏️ Profilni to'liq yangilash (PUT)", tags=["partner"])
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="✏️ Profilni qisman yangilash (PATCH)", tags=["partner"])
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 
