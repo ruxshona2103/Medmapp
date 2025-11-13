@@ -64,7 +64,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attachment
         fields = (
-            "id", "file", "file_url", "file_type", "mime_type", "size",
+            "id", "file_url", "file_type", "mime_type", "size",
             "formatted_size", "original_name", "uploaded_at",
             "uploader", "uploader_role", "preview_url"
         )
@@ -202,18 +202,12 @@ class MessageSerializer(serializers.ModelSerializer):
             raise ValidationError("Serializer context'da 'request' topilmadi.")
 
         if type == "text" and (not content or not content.strip()):
-            raise ValidationError({"content": "Matn bo‘sh bo‘lmasligi kerak"})
+            raise ValidationError({"content": "Matn bo'sh bo'lmasligi kerak"})
 
-        # --- ❗️ XATOLIK TUZATILGAN JOY ---
-        if type == "file":
-            # "attachments" YOKI "files" maydonini qidiramiz
-            files = request.FILES.getlist("attachments") or \
-                    request.FILES.getlist("files")
-
-            if not files:
-                # Xato xabarini ham aniqlashtiramiz
-                raise ValidationError(
-                    {"file": "Kamida 1 ta fayl bo‘lishi kerak ('attachments' yoki 'files' maydoni orqali)"})
+        # --- ❗️ FAYL VALIDATION'NI VIEWS.PY GA QO'LDIK ---
+        # type == "file" bo'lsa, validation views.py'da amalga oshiriladi
+        # chunki fayllar views.py'da to'g'ridan-to'g'ri Attachment modeliga yoziladi
+        # Bu yerda validation qilmaslik kerak
         # --- TUZATISH TUGADI ---
 
         if attrs.get("reply_to"):
@@ -231,22 +225,20 @@ class MessageSerializer(serializers.ModelSerializer):
             **validated_data
         )
 
-        # ---- ATTACHMENTS (YAXSHILANGAN) ----
-        # validate'da tekshirilgan fayllarni yana bir bor olamiz
+        # ---- ATTACHMENTS ----
+        # Fayllar views.py'da to'g'ridan-to'g'ri Attachment modeliga yoziladi
+        # Bu yerda attachment yaratmaslik kerak chunki views.py buni qiladi
+        # Faqat xabar yuborish uchun MessageSerializer ishlatilsa, fayllar bo'lishi mumkin
         files = request.FILES.getlist("attachments") or request.FILES.getlist("files")
 
-        for file in files:
-            # Attachment modelining o'zining save() metodi
-            # original_name, size va mime_type'ni avtomatik to'ldirishi kerak
-            Attachment.objects.create(
-                message=message,
-                file=file,
-                uploaded_by=request.user
-                # Agar Attachment.save() bularni to'ldirmasa, eski kodingizni qaytaring:
-                # original_name=file.name,
-                # size=file.size,
-                # mime_type=getattr(file, "content_type", "application/octet-stream")
-            )
+        if files:
+            # Agar serializer to'g'ridan-to'g'ri ishlatilsa (POST /messages/)
+            for file in files:
+                Attachment.objects.create(
+                    message=message,
+                    file=file,
+                    uploaded_by=request.user
+                )
 
         # ---- READ STATUS ----
         # Xabarni yuborgan odam avtomatik o'qigan hisoblanadi
