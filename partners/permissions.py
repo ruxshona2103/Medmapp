@@ -61,3 +61,25 @@ class IsPartnerOrReadOnly(permissions.BasePermission):
                 request.user.is_authenticated and
                 hasattr(request.user, 'partner_profile')
         )
+
+
+class IsPartnerOrOperator(permissions.BasePermission):
+    """
+    Hamkor yoki Operator uchun ruxsat
+
+    Faqat hamkor profiliga ega bo'lgan yoki operator/admin rolida bo'lgan
+    userlar kirishlari mumkin.
+    """
+
+    message = "Faqat hamkorlar va operatorlar uchun ruxsat etilgan."
+
+    def has_permission(self, request, view):
+        """User hamkor yoki operatormi?"""
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # User'da partner_profile bormi yoki operator/adminmi?
+        is_partner = hasattr(request.user, 'partner_profile')
+        is_operator = hasattr(request.user, 'role') and request.user.role in ('operator', 'admin')
+
+        return is_partner or is_operator

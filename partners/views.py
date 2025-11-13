@@ -19,7 +19,7 @@ from .serializers import (
     PartnerResponseUploadSerializer,
     PartnerProfileSerializer, PartnerResponseSerializer,
 )
-from .permissions import IsPartnerUser
+from .permissions import IsPartnerUser, IsPartnerOrOperator
 from patients.models import Patient, PatientHistory, PatientDocument
 from core.models import Stage
 
@@ -43,9 +43,10 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
     """
     🩺 Partner panel - faqat `DOCUMENTS` bosqichidagi bemorlar.
     Hamkor faqat shu bosqichdagi bemorlarga fayl yuklashi mumkin.
+    Operator barcha bemorlarni ko'rishi mumkin.
     """
 
-    permission_classes = [IsAuthenticated, IsPartnerUser]
+    permission_classes = [IsAuthenticated, IsPartnerOrOperator]
     pagination_class = PartnerPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["full_name"]
@@ -174,7 +175,7 @@ from rest_framework.permissions import IsAuthenticated
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .permissions import IsPartnerUser
+from .permissions import IsPartnerUser, IsPartnerOrOperator
 from .models import PartnerResponseDocument
 from .serializers import PartnerResponseSerializer
 
@@ -184,7 +185,7 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
     📩 Hamkor yuborgan javob xatlari (PartnerResponseDocument)
     """
 
-    permission_classes = [IsAuthenticated, IsPartnerUser]
+    permission_classes = [IsAuthenticated, IsPartnerOrOperator]
     serializer_class = PartnerResponseSerializer
     queryset = PartnerResponseDocument.objects.select_related("patient", "partner").order_by("-uploaded_at")
 
@@ -209,11 +210,15 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
         responses={200: PartnerResponseSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
-        partner = getattr(request.user, "partner_profile", None)
-        if not partner:
-            return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
-
-        qs = self.queryset.filter(partner=partner)
+        # Operator/admin uchun - barcha responslar
+        if hasattr(request.user, 'role') and request.user.role in ('operator', 'admin'):
+            qs = self.queryset.all()
+        # Hamkor uchun - faqat o'z responslar
+        else:
+            partner = getattr(request.user, "partner_profile", None)
+            if not partner:
+                return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
+            qs = self.queryset.filter(partner=partner)
 
         # 🔍 Filter by patient_id (optional)
         patient_id = request.query_params.get("patient_id")
@@ -233,11 +238,18 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
         responses={200: PartnerResponseSerializer()},
     )
     def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # Operator/admin uchun - barcha responslarni ko'rish mumkin
+        if hasattr(request.user, 'role') and request.user.role in ('operator', 'admin'):
+            serializer = self.get_serializer(instance, context={"request": request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Hamkor uchun - faqat o'z responslarni ko'rish mumkin
         partner = getattr(request.user, "partner_profile", None)
         if not partner:
             return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
 
-        instance = self.get_object()
         if instance.partner != partner:
             return Response({"detail": "Bu fayl sizga tegishli emas."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -252,11 +264,16 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
         responses={200: PartnerResponseSerializer(many=True)},
     )
     def patient_responses(self, request, patient_id=None):
-        partner = getattr(request.user, "partner_profile", None)
-        if not partner:
-            return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
+        # Operator/admin uchun - barcha patient responslar
+        if hasattr(request.user, 'role') and request.user.role in ('operator', 'admin'):
+            qs = self.queryset.filter(patient_id=patient_id)
+        # Hamkor uchun - faqat o'z patient responslar
+        else:
+            partner = getattr(request.user, "partner_profile", None)
+            if not partner:
+                return Response({"detail": "Hamkor profili topilmadi."}, status=status.HTTP_403_FORBIDDEN)
+            qs = self.queryset.filter(partner=partner, patient_id=patient_id)
 
-        qs = self.queryset.filter(partner=partner, patient_id=patient_id)
         serializer = self.get_serializer(qs, many=True, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
