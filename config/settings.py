@@ -20,7 +20,7 @@ DEBUG = os.environ.get("DEBUG", "True").lower() == "true"  # ✅ Yangi usul
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") + [
     "medmapp-1pjj.onrender.com",
     "med-mapp-admin.vercel.app",
-    ".vercel.app",  # ✅ Barcha vercel subdomainlari uchun
+    ".vercel.app", "176.96.243.144",  # ✅ Barcha vercel subdomainlari uchun
 ]
 
 # ===============================================================
