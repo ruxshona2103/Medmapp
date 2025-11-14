@@ -17,9 +17,7 @@ ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")  # ✅ O'zgartirildi
 IS_PRODUCTION = ENVIRONMENT == "production"
 DEBUG = os.environ.get("DEBUG", "True").lower() == "true"  # ✅ Yangi usul
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") + [
     "medmapp-1pjj.onrender.com",
     "med-mapp-admin.vercel.app",
     ".vercel.app",  # ✅ Barcha vercel subdomainlari uchun
@@ -129,7 +127,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 AUTH_USER_MODEL = "authentication.CustomUser"
 
 # ===============================================================
-# 💾 DATABASE (Render PostgreSQL)
+# 💾 DATABASE (PostgreSQL)
 # ===============================================================
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -140,7 +138,7 @@ DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=True,
+        ssl_require=False if os.environ.get("POSTGRES_HOST") == "db" else True,
     )
 }
 
