@@ -267,7 +267,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Xavfsizlik sozlamalari
 if IS_PRODUCTION:
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = False
     SECURE_HSTS_SECONDS = 31536000  # 1 yil
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
