@@ -164,16 +164,18 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "https://med-mapp-admin.vercel.app",
     "https://medmapp-1pjj.onrender.com",
+    'https://med-mapp-one.vercel.app'
     "http://127.0.0.1:3000",
     "http://localhost:3000",
-    "http://127.0.0.1:8000",  # ✅ Qo'shildi
-    "http://localhost:8000",  # ✅ Qo'shildi
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://med-mapp-admin.vercel.app",
     "https://medmapp-1pjj.onrender.com",
-    "https://*.vercel.app",  # ✅ Qo'shildi
+    "https://*.vercel.app",
+    'https://med-mapp-one.vercel.app'
 ]
 
 CORS_ALLOW_METHODS = [
