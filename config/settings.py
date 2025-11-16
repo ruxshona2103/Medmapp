@@ -164,7 +164,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "https://med-mapp-admin.vercel.app",
     "https://medmapp-1pjj.onrender.com",
-    'https://med-mapp-one.vercel.app'
+    'https://med-mapp-one.vercel.app',
     "http://127.0.0.1:3000",
     "http://localhost:3000",
     "http://127.0.0.1:8000",
@@ -210,9 +210,9 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 # ===============================================================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [  # ✅ Qo'shildi
-    BASE_DIR / "static",
-]
+# STATICFILES_DIRS = [  # ✅ Qo'shildi
+#     BASE_DIR / "static",
+# ]
 
 # Static fayllar jildini yaratish
 os.makedirs(STATIC_ROOT, exist_ok=True)
