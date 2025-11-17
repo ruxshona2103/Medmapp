@@ -1,6 +1,7 @@
 # ===============================================================
-# DJANGO SETTINGS – MEDMAPP PROJECT (PRODUCTION READY)
+# DJANGO SETTINGS – MEDMAPP PROJECT (FIXED + OPTIMIZED)
 # ===============================================================
+
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -8,23 +9,34 @@ import dj_database_url
 from django.utils.translation import gettext_lazy as _
 
 # ===============================================================
-# 🔧 BASE SETTINGS
+# BASE SETTINGS
 # ===============================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-key")
 
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")  # ✅ O'zgartirildi
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 IS_PRODUCTION = ENVIRONMENT == "production"
-DEBUG = os.environ.get("DEBUG", "True").lower() == "true"  # ✅ Yangi usul
 
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") + [
-    "medmapp-1pjj.onrender.com",
-    "med-mapp-admin.vercel.app",
-    ".vercel.app", "176.96.243.144",  # ✅ Barcha vercel subdomainlari uchun
-]
+DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
 
 # ===============================================================
-# 🌍 LANGUAGE & TIMEZONE
+# ALLOWED HOSTS
+# ===============================================================
+ALLOWED_HOSTS = (
+    os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+    + [
+        "medmapp-1pjj.onrender.com",
+        "med-mapp-admin.vercel.app",
+        "med-mapp-one.vercel.app",
+        "admin.medmapp.uz",
+        "176.96.243.144",
+        ".vercel.app",
+    ]
+)
+
+# ===============================================================
+# LANGUAGE & TIME
 # ===============================================================
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -37,15 +49,12 @@ LANGUAGES = [
     ("en", _("English")),
 ]
 
-LOCALE_PATHS = [  # ✅ Qo'shildi
-    BASE_DIR / "locale",
-]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 
 # ===============================================================
-# 📦 INSTALLED APPS
+# INSTALLED APPS
 # ===============================================================
 INSTALLED_APPS = [
-    # Core
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -53,28 +62,27 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Third-party
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "drf_yasg",
 
-    'authentication',
-    'patients.apps.PatientsConfig',
-    'partners.apps.PartnersConfig',
+    "authentication",
+    "patients.apps.PatientsConfig",
+    "partners.apps.PartnersConfig",
     "applications",
     "services",
     "consultations",
     "clinics",
     "core",
-    "review"
+    "review",
 ]
 
 # ===============================================================
-# ⚙️ MIDDLEWARE (CORS eng tepada!)
+# MIDDLEWARE
 # ===============================================================
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # 🔥 Birinchi bo'lishi kerak!
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -89,17 +97,17 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 
 # ===============================================================
-# 🧩 TEMPLATES
+# TEMPLATES
 # ===============================================================
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],  # ✅ Qo'shildi
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.debug",
-                "django.template.context_processors.request",  # ✅ Birinchi o'ringa
+                "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
             ],
@@ -107,27 +115,15 @@ TEMPLATES = [
     },
 ]
 
-# ===============================================================
-# 🚀 ASGI / WSGI (ASGI commentga olindi)
-# ===============================================================
-# ASGI_APPLICATION = "config.asgi.application"  # ❌ Commentga olindi
 WSGI_APPLICATION = "config.wsgi.application"
 
-# CHANNEL_LAYERS ni o'chirib qo'ying yoki commentga oling
-# CHANNEL_LAYERS = {
-#     "default": {
-#         "BACKEND": "channels_redis.core.RedisChannelLayer",
-#         "CONFIG": {"hosts": [("127.0.0.1", 6379)]},
-#     },
-# }
-
 # ===============================================================
-# 👤 AUTH / USERS
+# AUTH USER
 # ===============================================================
 AUTH_USER_MODEL = "authentication.CustomUser"
 
 # ===============================================================
-# 💾 DATABASE (PostgreSQL)
+# DATABASE
 # ===============================================================
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -138,12 +134,12 @@ DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=False if os.environ.get("POSTGRES_HOST") == "db" else True,
+        ssl_require=True,
     )
 }
 
 # ===============================================================
-# 🔐 JWT AUTHENTICATION
+# JWT
 # ===============================================================
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
@@ -153,85 +149,59 @@ SIMPLE_JWT = {
     "ALGORITHM": "HS256",
     "SIGNING_KEY": SECRET_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
-    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
 }
 
 # ===============================================================
-# 🌐 CORS / CSRF CONFIG
+# CORS & CSRF (FIXED)
 # ===============================================================
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://med-mapp-admin.vercel.app",
     "https://medmapp-1pjj.onrender.com",
-    'https://med-mapp-one.vercel.app',
-    "http://127.0.0.1:3000",
+    "https://med-mapp-one.vercel.app",
+    "http://admin.medmapp.uz",
+    "https://admin.medmapp.uz",
     "http://localhost:3000",
-    "http://127.0.0.1:8000",
-    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://[\w-]+\.vercel\.app$",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://med-mapp-admin.vercel.app",
     "https://medmapp-1pjj.onrender.com",
+    "https://med-mapp-one.vercel.app",
+    "https://admin.medmapp.uz",
+    "http://admin.medmapp.uz",
     "https://*.vercel.app",
-    'https://med-mapp-one.vercel.app'
 ]
 
-CORS_ALLOW_METHODS = [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS",
-]
-
-CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",
-    "dnt",
-    "origin",
-    "user-agent",
-    "x-csrftoken",
-    "x-requested-with",
-]
-
-# ✅ Barcha Vercel domainlari uchun regex
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://[\w-]+\.vercel\.app$",
-    r"^https://[\w-]+-[\w-]+\.vercel\.app$",
-]
+CORS_ALLOW_HEADERS = ["*"]
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 # ===============================================================
-# 📄 STATIC / MEDIA FILES
+# STATIC & MEDIA
 # ===============================================================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-# STATICFILES_DIRS = [  # ✅ Qo'shildi
-#     BASE_DIR / "static",
-# ]
-
-# Static fayllar jildini yaratish
-os.makedirs(STATIC_ROOT, exist_ok=True)
-
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-os.makedirs(MEDIA_ROOT, exist_ok=True)
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ===============================================================
-# 🧭 REST FRAMEWORK
+# REST FRAMEWORK
 # ===============================================================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication"
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",  # ✅ O'zgartirildi
+        "rest_framework.permissions.IsAuthenticatedOrReadOnly"
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -240,56 +210,42 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Agar DEBUG bo'lsa, browsable API ni qo'shish
 if DEBUG:
     REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"].append(
         "rest_framework.renderers.BrowsableAPIRenderer"
     )
 
 # ===============================================================
-# 📘 SWAGGER SETTINGS
+# SWAGGER
 # ===============================================================
 SWAGGER_SETTINGS = {
+    "USE_SESSION_AUTH": False,
     "SECURITY_DEFINITIONS": {
         "Bearer": {
             "type": "apiKey",
             "name": "Authorization",
             "in": "header",
-            "description": "JWT tokenini kiriting: **Bearer <token>**",
         }
     },
-    "USE_SESSION_AUTH": False,
-    "JSON_EDITOR": True,
 }
 
 # ===============================================================
-# 🔧 QO'SHIMCHA SETTINGS
+# SECURITY FIX FOR HTTP SWAGGER
 # ===============================================================
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# Xavfsizlik sozlamalari
 if IS_PRODUCTION:
     SECURE_SSL_REDIRECT = False
-    SECURE_HSTS_SECONDS = 31536000  # 1 yil
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_HSTS_SECONDS = 0
 
-# Email sozlamalari (agar kerak bo'lsa)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-
-# Logging sozlamalari
+# ===============================================================
+# LOGGING
+# ===============================================================
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-        },
-    },
-    "root": {
-        "handlers": ["console"],
-        "level": "WARNING",
-    },
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": "WARNING"},
 }
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
