@@ -124,7 +124,6 @@ AUTH_USER_MODEL = "authentication.CustomUser"
 
 # ===============================================================
 # DATABASE
-# ===============================================================
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
@@ -134,9 +133,10 @@ DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=True,
+        ssl_require=False,
     )
 }
+
 
 # ===============================================================
 # JWT
