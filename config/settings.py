@@ -1,5 +1,5 @@
 # ===============================================================
-# DJANGO SETTINGS – MEDMAPP PROJECT (FIXED + OPTIMIZED)
+# DJANGO SETTINGS – MEDMAPP (FINAL PRODUCTION VERSION)
 # ===============================================================
 
 import os
@@ -9,31 +9,30 @@ import dj_database_url
 from django.utils.translation import gettext_lazy as _
 
 # ===============================================================
-# BASE SETTINGS
+# BASE
 # ===============================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-key")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 IS_PRODUCTION = ENVIRONMENT == "production"
 
-DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 # ===============================================================
-# ALLOWED HOSTS
+# HOSTS
 # ===============================================================
-ALLOWED_HOSTS = (
-    os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
-    + [
-        "medmapp-1pjj.onrender.com",
-        "med-mapp-admin.vercel.app",
-        "med-mapp-one.vercel.app",
-        "admin.medmapp.uz",
-        "176.96.243.144",
-        ".vercel.app",
-    ]
-)
+ALLOWED_HOSTS = [
+    "admin.medmapp.uz",
+    "medmapp-1pjj.onrender.com",
+    "med-mapp-admin.vercel.app",
+    "med-mapp-one.vercel.app",
+    "176.96.243.144",
+    "localhost",
+    "127.0.0.1",
+    ".vercel.app",
+]
 
 # ===============================================================
 # LANGUAGE & TIME
@@ -123,7 +122,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 AUTH_USER_MODEL = "authentication.CustomUser"
 
 # ===============================================================
-# DATABASE
+# DATABASE (POSTGRES – DOCKER + RENDER SUPPORT)
+# ===============================================================
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
@@ -133,13 +133,18 @@ DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=False,
+        ssl_require=False,   # Docker Postgres uchun MUHIM!
     )
 }
 
+# ===============================================================
+# HTTPS / REVERSE PROXY FIX
+# ===============================================================
+# NGINX -> Django uchun to‘g‘ri SSL forwarding
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # ===============================================================
-# JWT
+# JWT AUTHENTICATION
 # ===============================================================
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
@@ -152,16 +157,18 @@ SIMPLE_JWT = {
 }
 
 # ===============================================================
-# CORS & CSRF (FIXED)
+# CORS & CSRF (PERFECT)
 # ===============================================================
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "https://med-mapp-admin.vercel.app",
-    "https://medmapp-1pjj.onrender.com",
-    "https://med-mapp-one.vercel.app",
-    "http://admin.medmapp.uz",
     "https://admin.medmapp.uz",
+    "http://admin.medmapp.uz",
+
+    "https://med-mapp-admin.vercel.app",
+    "https://med-mapp-one.vercel.app",
+    "https://medmapp-1pjj.onrender.com",
+
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
@@ -171,19 +178,20 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://med-mapp-admin.vercel.app",
-    "https://medmapp-1pjj.onrender.com",
-    "https://med-mapp-one.vercel.app",
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
+
     "https://*.vercel.app",
+    "https://med-mapp-admin.vercel.app",
+    "https://med-mapp-one.vercel.app",
+    "https://medmapp-1pjj.onrender.com",
 ]
 
 CORS_ALLOW_HEADERS = ["*"]
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 # ===============================================================
-# STATIC & MEDIA
+# STATIC / MEDIA
 # ===============================================================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -194,7 +202,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ===============================================================
-# REST FRAMEWORK
+# DRF
 # ===============================================================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -216,10 +224,11 @@ if DEBUG:
     )
 
 # ===============================================================
-# SWAGGER
+# SWAGGER (HTTPS FIX)
 # ===============================================================
 SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
+    "DEFAULT_API_URL": "https://admin.medmapp.uz",
     "SECURITY_DEFINITIONS": {
         "Bearer": {
             "type": "apiKey",
@@ -230,7 +239,7 @@ SWAGGER_SETTINGS = {
 }
 
 # ===============================================================
-# SECURITY FIX FOR HTTP SWAGGER
+# SECURITY
 # ===============================================================
 if IS_PRODUCTION:
     SECURE_SSL_REDIRECT = False
