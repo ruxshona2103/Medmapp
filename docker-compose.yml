@@ -48,8 +48,9 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - static_volume:/app/staticfiles:ro
       - media_volume:/app/media:ro
-      # self-signed sertifikatlar joylashgan host papkani container ichiga ulaymiz
-      - /etc/nginx/ssl:/etc/nginx/ssl:ro
+      # Let's Encrypt sertifikatlar uchun
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
     ports:
       - "80:80"
       - "443:443"
