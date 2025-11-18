@@ -553,15 +553,15 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-
 @swagger_auto_schema(
     method='get',
     operation_summary="📊 Bemorlar statistikasi",
     operation_description="""
-    ✅ Operator uchun statistika:
+    Operator uchun statistikalar:
+
     - Jami bemorlar
-    - Yangi bemorlar (oxirgi 7 kun)
-    - Faol bemorlar (arizalari bor)
+    - Yangi bemorlar (Application.stage = 'yangi')
+    - Faol bemorlar (Application.stage = 'responses')
     - Erkak bemorlar
     - Ayol bemorlar
     """,
@@ -582,58 +582,45 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
     },
     tags=["statistics"]
 )
-
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def patient_statistics(request):
-    """
-    ✅ TO'G'RILANGAN - Bemorlar statistikasi
+    from applications.models import Application
 
-    GET /api/patients/statistics/
-    """
     try:
-        # ✅ 1. Jami bemorlar
+        # Jami bemorlar
         jami_bemorlar = Patient.objects.count()
 
-        # ✅ 2. Yangi bemorlar (oxirgi 7 kun)
-        seven_days_ago = timezone.now() - timedelta(days=7)
+        # Yangi bemorlar (stage = "yangi")
         yangi_bemorlar = Patient.objects.filter(
-            created_at__gte=seven_days_ago
+            id__in=Application.objects.filter(stage="yangi")
+            .values_list("patient_id", flat=True)
+            .distinct()
         ).count()
 
-        # ✅ 3. Faol bemorlar (arizalari bor) - TO'G'RILANDI
-        try:
-            from applications.models import Application
+        # Faol bemorlar (stage = "responses")
+        faol_bemorlar = Patient.objects.filter(
+            id__in=Application.objects.filter(stage="responses")
+            .values_list("patient_id", flat=True)
+            .distinct()
+        ).count()
 
-            # TO'G'RI usul - subquery
-            faol_bemorlar = Patient.objects.filter(
-                id__in=Application.objects.values_list('patient_id', flat=True).distinct()
-            ).count()
-
-        except Exception as app_error:
-            print(f"Application model xatosi: {app_error}")
-            faol_bemorlar = 0
-
-        # ✅ 4. Jins bo'yicha statistika
+        # Erkak / Ayol statistika
         erkak = Patient.objects.filter(gender="Erkak").count()
         ayol = Patient.objects.filter(gender="Ayol").count()
 
         return Response({
-            'jami_bemorlar': jami_bemorlar,
-            'yangi_bemorlar': yangi_bemorlar,
-            'faol_bemorlar': faol_bemorlar,
-            'erkak': erkak,
-            'ayol': ayol,
+            "jami_bemorlar": jami_bemorlar,
+            "yangi_bemorlar": yangi_bemorlar,
+            "faol_bemorlar": faol_bemorlar,
+            "erkak": erkak,
+            "ayol": ayol,
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
         import traceback
-        print(f"Statistics xatosi: {str(e)}")
-        print(traceback.format_exc())
-
         return Response(
-            {'detail': f'Xato: {str(e)}'},
+            {"detail": f"Xato: {str(e)}", "trace": traceback.format_exc()},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
