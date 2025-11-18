@@ -616,8 +616,8 @@ def patient_statistics(request):
             faol_bemorlar = 0
 
         # ✅ 4. Jins bo'yicha statistika
-        erkak = Patient.objects.filter(gender='male').count()
-        ayol = Patient.objects.filter(gender='female').count()
+        erkak = Patient.objects.filter(gender="Erkak").count()
+        ayol = Patient.objects.filter(gender="Ayol").count()
 
         return Response({
             'jami_bemorlar': jami_bemorlar,
