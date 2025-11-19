@@ -39,18 +39,21 @@ class SpecialtyAdmin(admin.ModelAdmin):
 class ClinicSpecialtyInline(admin.TabularInline):
     model = ClinicSpecialty
     extra = 1
+    autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
 
 
 class DoctorInline(admin.TabularInline):
     model = Doctor
     extra = 0
     fields = ("full_name", "specialty", "is_top", "order")
+    autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
 
 
 class PriceInline(admin.TabularInline):
     model = TreatmentPrice
     extra = 0
     fields = ("specialty", "procedure_uz", "price_usd", "order", "is_active")
+    autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
 
 
 class InfraInline(admin.TabularInline):
@@ -83,6 +86,7 @@ class ClinicAdmin(admin.ModelAdmin):
     search_fields = ("title_uz", "title_ru", "title_en", "address_uz", "address_ru", "address_en")
     prepopulated_fields = {"slug": ("title_uz",)}
     filter_horizontal = ("accreditations",)
+    autocomplete_fields = ['country', 'city']  # ✅ Qidiruv oynasi country va city uchun
     inlines = [ClinicSpecialtyInline, DoctorInline, PriceInline, InfraInline, GalleryInline, NearbyInline]
 
 
@@ -92,6 +96,7 @@ class DoctorAdmin(admin.ModelAdmin):
     list_display = ("full_name", "clinic", "specialty", "is_top", "order")
     list_filter = ("clinic", "specialty", "is_top")
     search_fields = ("full_name",)
+    autocomplete_fields = ['clinic', 'specialty']  # ✅ Qidiruv oynasi
 
 
 # === Treatment Price ===
@@ -100,6 +105,7 @@ class TreatmentPriceAdmin(admin.ModelAdmin):
     list_display = ("clinic", "specialty", "procedure_uz", "price_usd", "order", "is_active")
     list_filter = ("clinic", "specialty", "is_active")
     search_fields = ("procedure_uz", "procedure_ru", "procedure_en")
+    autocomplete_fields = ['clinic', 'specialty']  # ✅ Qidiruv oynasi
 
 
 # === Clinic Infrastructure ===
@@ -107,14 +113,16 @@ class TreatmentPriceAdmin(admin.ModelAdmin):
 class ClinicInfraAdmin(admin.ModelAdmin):
     list_display = ("clinic", "text_uz", "order")
     list_filter = ("clinic",)
+    autocomplete_fields = ['clinic']  # ✅ Qidiruv oynasi
 
 
-# === Clinic Gallery (alohida bo‘lim sifatida) ===
+# === Clinic Gallery (alohida bo'lim sifatida) ===
 @admin.register(ClinicImage)
 class ClinicImageAdmin(admin.ModelAdmin):
     list_display = ("preview", "clinic", "title_uz", "order")
     list_filter = ("clinic",)
     readonly_fields = ("preview",)
+    autocomplete_fields = ['clinic']  # ✅ Qidiruv oynasi
 
     def preview(self, obj):
         if obj.image:
@@ -128,3 +136,4 @@ class ClinicImageAdmin(admin.ModelAdmin):
 class NearbyAdmin(admin.ModelAdmin):
     list_display = ("clinic", "title_uz", "rating")
     list_filter = ("clinic",)
+    autocomplete_fields = ['clinic']  # ✅ Qidiruv oynasi

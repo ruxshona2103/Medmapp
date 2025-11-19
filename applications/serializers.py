@@ -51,6 +51,7 @@ class ApplicationHistorySerializer(serializers.ModelSerializer):
 class DocumentSerializer(serializers.ModelSerializer):
     """Hujjat serializer - to'liq ma'lumotlar"""
     uploaded_by = UserMinimalSerializer(read_only=True)
+    file = serializers.FileField(write_only=True)  # ✅ Faqat upload uchun
     file_url = serializers.SerializerMethodField()
     file_name = serializers.SerializerMethodField()
     file_size = serializers.SerializerMethodField()
@@ -60,8 +61,8 @@ class DocumentSerializer(serializers.ModelSerializer):
         model = Document
         fields = [
             'id',
-            'file',
-            'file_url',
+            'file',  # ✅ Write only - faqat upload uchun
+            'file_url',  # ✅ Read only - response uchun
             'file_name',
             'file_size',
             'file_type',
