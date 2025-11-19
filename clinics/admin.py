@@ -48,8 +48,7 @@ class ClinicSpecialtyInline(admin.TabularInline):
 class DoctorInline(admin.TabularInline):
     model = Doctor
     extra = 1
-    fields = ("full_name", "specialty", "is_top", "order")
-    autocomplete_fields = ['specialty']
+    fields = ("full_name",)
     show_change_link = True  # ✅ Tahrirlash havolasi (yangi sahifada ochiladi)
     can_delete = True
 
