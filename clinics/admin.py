@@ -44,26 +44,28 @@ class ClinicSpecialtyInline(admin.TabularInline):
 
 class DoctorInline(admin.TabularInline):
     model = Doctor
-    extra = 0
-    fields = ("full_name", "specialty", "is_top", "order")
+    extra = 1
+    fields = ("photo", "full_name", "specialty", "title_uz", "experience_years", "is_top", "order")
     autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
 
 
 class PriceInline(admin.TabularInline):
     model = TreatmentPrice
-    extra = 0
-    fields = ("specialty", "procedure_uz", "price_usd", "order", "is_active")
+    extra = 1
+    fields = ("specialty", "procedure_uz", "procedure_ru", "procedure_en", "price_usd", "order", "is_active")
     autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
 
 
 class InfraInline(admin.TabularInline):
     model = ClinicInfrastructure
-    extra = 0
+    extra = 1
+    fields = ("image", "text_uz", "text_ru", "text_en", "order")
 
 
 class GalleryInline(admin.TabularInline):
     model = ClinicImage
-    extra = 0
+    extra = 1
+    fields = ("preview", "image", "title_uz", "title_ru", "title_en", "order")
     readonly_fields = ("preview",)
 
     def preview(self, obj):
@@ -75,7 +77,8 @@ class GalleryInline(admin.TabularInline):
 
 class NearbyInline(admin.TabularInline):
     model = NearbyStay
-    extra = 0
+    extra = 1
+    fields = ("image", "title_uz", "title_ru", "title_en", "address", "rating")
 
 
 # === Clinic ===
