@@ -39,34 +39,45 @@ class SpecialtyAdmin(admin.ModelAdmin):
 class ClinicSpecialtyInline(admin.TabularInline):
     model = ClinicSpecialty
     extra = 1
+    fields = ("specialty",)
     autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
+    show_change_link = True
+    can_delete = True
 
 
 class DoctorInline(admin.TabularInline):
     model = Doctor
     extra = 1
-    fields = ("photo", "full_name", "specialty", "title_uz", "experience_years", "is_top", "order")
-    autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
+    fields = ("full_name", "specialty", "is_top", "order")
+    autocomplete_fields = ['specialty']
+    show_change_link = True  # ✅ Tahrirlash havolasi (yangi sahifada ochiladi)
+    can_delete = True
 
 
 class PriceInline(admin.TabularInline):
     model = TreatmentPrice
     extra = 1
-    fields = ("specialty", "procedure_uz", "procedure_ru", "procedure_en", "price_usd", "order", "is_active")
-    autocomplete_fields = ['specialty']  # ✅ Qidiruv oynasi
+    fields = ("specialty", "procedure_uz", "price_usd", "is_active")
+    autocomplete_fields = ['specialty']
+    show_change_link = True  # ✅ Tahrirlash havolasi
+    can_delete = True
 
 
 class InfraInline(admin.TabularInline):
     model = ClinicInfrastructure
     extra = 1
-    fields = ("image", "text_uz", "text_ru", "text_en", "order")
+    fields = ("text_uz", "order")
+    show_change_link = True  # ✅ Tahrirlash havolasi
+    can_delete = True
 
 
 class GalleryInline(admin.TabularInline):
     model = ClinicImage
     extra = 1
-    fields = ("preview", "image", "title_uz", "title_ru", "title_en", "order")
+    fields = ("preview", "title_uz", "order")
     readonly_fields = ("preview",)
+    show_change_link = True  # ✅ Tahrirlash havolasi
+    can_delete = True
 
     def preview(self, obj):
         if obj.image:
@@ -78,7 +89,9 @@ class GalleryInline(admin.TabularInline):
 class NearbyInline(admin.TabularInline):
     model = NearbyStay
     extra = 1
-    fields = ("image", "title_uz", "title_ru", "title_en", "address", "rating")
+    fields = ("title_uz", "rating")
+    show_change_link = True  # ✅ Tahrirlash havolasi
+    can_delete = True
 
 
 # === Clinic ===
