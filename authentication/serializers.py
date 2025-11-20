@@ -8,6 +8,8 @@ from datetime import timedelta
 from .otp_service import OtpService
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed
+import requests  # SMS yuborish uchun
+import random  # OTP generatsiya uchun
 
 User = get_user_model()
 
@@ -65,7 +67,6 @@ class OtpRequestSerializer(serializers.Serializer):
         # Agar oxirgi 60 soniyada OTP yuborilgan bo'lsa, qayta yubormaslik (spam oldini olish)
         last_sent = cache.get(f"otp_last_sent_{phone}")
         if last_sent:
-            from django.utils import timezone
             time_passed = (timezone.now() - last_sent).total_seconds()
             if time_passed < 60:
                 wait_time = int(60 - time_passed)
@@ -73,60 +74,59 @@ class OtpRequestSerializer(serializers.Serializer):
                     f"OTP allaqachon yuborilgan. {wait_time} soniyadan keyin qayta so'rang."
                 )
 
-        # MUHIM: OTP generatsiya qilish
-        from authentication.otp_service import OtpService
-        otp_code = OtpService._generate_otp()
+        # 1. OTP generatsiya qilish va darhol cache'ga saqlash
+        otp_code = str(random.randint(100000, 999999))
 
-        # 1. AVVAL cache'ga saqlash (foydalanuvchi tez kiritsa ham tayyor bo'ladi)
+        # 2. AVVAL cache'ga saqlash (race condition oldini olish)
         cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
         cache.set(f"otp_attempts_{phone}", 0, timeout=300)  # Urinishlarni reset
         cache.set(f"otp_last_sent_{phone}", timezone.now(), timeout=300)  # Oxirgi yuborish vaqti
+        cache.set(f"otp_ready_{phone}", True, timeout=300)  # Cache tayyor signal
 
-        # 2. KEYIN SMS yuborish (bu vaqt oladi, lekin cache tayyor)
+        # 3. KEYIN SMS yuborish (bu vaqt oladi, lekin cache allaqachon tayyor)
         sms_sent = False
-        sms_error = None
-
         try:
-            # SMS yuborish uchun to'liq metoddan foydalanamiz
-            # Lekin avval tokenni olib, keyin SMS yuboramiz
+            # Tokenni olish
             token = OtpService._get_token()
+
             payload = {
                 "mobile_phone": phone,
                 "message": f"medmapp.uz platformasiga kirish uchun tasdiqlash kodi: {otp_code}",
-                "from": OtpService.FROM
+                "from": "4546"  # Eskiz FROM raqami
             }
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
             }
 
-            import requests
-            response = requests.post(OtpService.SMS_URL, json=payload, headers=headers, timeout=10)
+            response = requests.post(
+                "https://notify.eskiz.uz/api/message/sms/send",
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
             response.raise_for_status()
             sms_sent = True
             print(f"✅ OTP {otp_code} raqamiga yuborildi: {phone}")
         except Exception as e:
-            # SMS yuborishda xatolik bo'lsa ham cache'da bor (test uchun)
-            sms_error = str(e)
+            # SMS yuborishda xatolik
             print(f"⚠️ SMS yuborishda xatolik: {e}")
 
-            # Production'da SMS yuborilmasa cache'dan o'chiramiz
+            # Production'da xatolik bo'lsa cache'ni tozalash
             if not settings.DEBUG:
                 cache.delete(f"otp_{phone}")
                 cache.delete(f"otp_attempts_{phone}")
                 cache.delete(f"otp_last_sent_{phone}")
+                cache.delete(f"otp_ready_{phone}")
                 raise serializers.ValidationError("SMS yuborishda xatolik yuz berdi. Qayta urinib ko'ring.")
-
-        # Cache tayyor ekanligi haqida signal
-        cache.set(f"otp_ready_{phone}", True, timeout=300)
 
         return {
             "message": "OTP muvaffaqiyatli yuborildi!",
             "phone_number": phone,
             "otp": otp_code if settings.DEBUG else "****",
-            "cache_ready": True,  # Frontend uchun signal
-            "sms_sent": sms_sent,  # SMS yuborilganmi?
-            "estimated_delivery": "5-30 soniya",  # SMS yetib borish vaqti
+            "cache_ready": True,
+            "sms_sent": sms_sent,
+            "estimated_delivery": "5-30 soniya",
         }
 
 
