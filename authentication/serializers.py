@@ -6,7 +6,7 @@ from config import settings
 from django.utils import timezone
 from datetime import timedelta
 from .otp_service import OtpService
-from .otp_manager import OTPManager  # ← NEW: Bulletproof OTP Manager
+from .otp_manager import OTPManager
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed
 import requests
@@ -20,8 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'first_name', 'last_name', 'phone_number', 'district', 'role', 'is_active', 'date_joined']
-        ref_name = "AuthUserSerializer"  # <<<<<<< MUHIM: ref_name farqi
-
+        ref_name = "AuthUserSerializer"
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -37,7 +36,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate_phone_number(self, value):
         # ✅ NORMALIZE phone number (CRITICAL FIX!)
         value = OTPManager.normalize_phone(value)
-        logger.info(f"Register: normalized phone = {value}")
+        logger.info(f"📝 Register: normalized phone = {value}")
 
         if not value.startswith("+998"):
             raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak")
@@ -48,13 +47,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         # Also check PendingUser (allow update)
         if PendingUser.objects.filter(phone_number=value).exists():
-            logger.info(f"PendingUser already exists for {value}, will update")
+            logger.info(f"ℹ️ PendingUser already exists for {value}, will update")
 
         return value
 
     def create(self, validated_data):
         phone = validated_data['phone_number']
-        logger.info(f"Creating PendingUser for {phone}")
+        logger.info(f"📝 Creating PendingUser for {phone}")
 
         pending_user, created = PendingUser.objects.update_or_create(
             phone_number=phone,
@@ -70,9 +69,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         if created:
             logger.info(f"✅ New PendingUser created: {phone}")
         else:
-            logger.info(f"✅ PendingUser updated: {phone}")
+            logger.info(f"♻️ PendingUser updated: {phone}")
 
         return pending_user
+
 
 class OtpRequestSerializer(serializers.Serializer):
     """
@@ -87,7 +87,7 @@ class OtpRequestSerializer(serializers.Serializer):
         # Normalize phone number
         original_value = value
         value = OTPManager.normalize_phone(value)
-        logger.info(f"OTP Request: original={original_value}, normalized={value}")
+        logger.info(f"📞 OTP Request: original={original_value}, normalized={value}")
 
         if not value.startswith("+998"):
             raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak.")
@@ -96,7 +96,7 @@ class OtpRequestSerializer(serializers.Serializer):
         pending_exists = PendingUser.objects.filter(phone_number=value).exists()
         custom_exists = CustomUser.objects.filter(phone_number=value).exists()
 
-        logger.info(f"User check for {value}: PendingUser={pending_exists}, CustomUser={custom_exists}")
+        logger.info(f"🔍 User check for {value}: PendingUser={pending_exists}, CustomUser={custom_exists}")
 
         if not (pending_exists or custom_exists):
             # Additional debug: check what's actually in the database
@@ -106,7 +106,7 @@ class OtpRequestSerializer(serializers.Serializer):
 
             # Try to find similar phones (debug)
             similar = PendingUser.objects.filter(phone_number__contains="998").values_list('phone_number', flat=True)[:5]
-            logger.error(f"Similar phones in DB: {list(similar)}")
+            logger.error(f"📋 Similar phones in DB: {list(similar)}")
 
             raise serializers.ValidationError("Avval ro'yxatdan o'ting.")
 
@@ -115,7 +115,7 @@ class OtpRequestSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         phone = validated_data["phone_number"]
-        logger.info(f"OTP request for {phone}")
+        logger.info(f"📞 OTP request for {phone}")
 
         try:
             # Create OTP using bulletproof manager (dual storage)
@@ -124,11 +124,14 @@ class OtpRequestSerializer(serializers.Serializer):
             if not success:
                 raise serializers.ValidationError("OTP yaratishda xatolik yuz berdi.")
 
+            logger.info(f"🔐 OTP created for {phone}: {otp_code if settings.DEBUG else '****'}")
+
         except ValueError as e:
             # Cooldown or other validation error
+            logger.warning(f"⏳ OTP creation blocked for {phone}: {str(e)}")
             raise serializers.ValidationError(str(e))
         except Exception as e:
-            logger.error(f"OTP creation error for {phone}: {e}")
+            logger.error(f"❌ OTP creation error for {phone}: {e}")
             raise serializers.ValidationError("Server xatolik. Iltimos, qayta urinib ko'ring.")
 
         # Send SMS
@@ -154,13 +157,13 @@ class OtpRequestSerializer(serializers.Serializer):
             )
             response.raise_for_status()
             sms_sent = True
-            logger.info(f"✅ SMS sent successfully to {phone}")
+            logger.info(f"✉️ SMS sent successfully to {phone}")
 
         except Exception as e:
-            logger.error(f"SMS sending error for {phone}: {e}")
+            logger.error(f"❌ SMS sending error for {phone}: {e}")
 
-            # SMS failed - cleanup OTP
-            OTPManager._cleanup_otp(phone)
+            # SMS failed - cleanup OTP using CORRECT method name
+            OTPManager._cleanup_specific_otp(phone)  # ✅ FIXED: was _cleanup_otp
 
             # Always raise error if SMS fails (even in DEBUG)
             raise serializers.ValidationError(
@@ -174,6 +177,7 @@ class OtpRequestSerializer(serializers.Serializer):
             "sms_sent": sms_sent,
             "estimated_delivery": "5-30 soniya",
         }
+
 
 class OtpVerifySerializer(serializers.Serializer):
     """
@@ -194,13 +198,18 @@ class OtpVerifySerializer(serializers.Serializer):
         phone = OTPManager.normalize_phone(phone)
         attrs["phone_number"] = phone
 
-        logger.info(f"Verifying OTP for {phone}")
+        logger.info(f"🔍 Verifying OTP for {phone}, code length: {len(code)}")
+
+        # ✅ Validate code format
+        if not code or not code.isdigit() or len(code) != 6:
+            logger.warning(f"❌ Invalid OTP format for {phone}: length={len(code)}, isdigit={code.isdigit()}")
+            raise serializers.ValidationError("OTP 6 ta raqamdan iborat bo'lishi kerak")
 
         # Verify using bulletproof manager
         success, message = OTPManager.verify_otp(phone, code)
 
         if not success:
-            logger.warning(f"OTP verification failed for {phone}: {message}")
+            logger.warning(f"❌ OTP verification failed for {phone}: {message}")
             raise serializers.ValidationError(message)
 
         logger.info(f"✅ OTP verified successfully for {phone}")
@@ -209,11 +218,14 @@ class OtpVerifySerializer(serializers.Serializer):
         try:
             pending = PendingUser.objects.get(phone_number=phone)
             attrs["pending_user"] = pending
+            logger.info(f"📋 PendingUser found for {phone}")
         except PendingUser.DoesNotExist:
             # Check if user already exists
             if not CustomUser.objects.filter(phone_number=phone).exists():
+                logger.error(f"❌ No PendingUser or CustomUser for {phone}")
                 raise serializers.ValidationError("Bunday raqam uchun ro'yxatdan o'tish topilmadi.")
             attrs["pending_user"] = None
+            logger.info(f"ℹ️ Existing CustomUser login for {phone}")
 
         return attrs
 
@@ -221,7 +233,7 @@ class OtpVerifySerializer(serializers.Serializer):
         pending = validated_data.get("pending_user")
         phone = validated_data.get("phone_number")
 
-        logger.info(f"Creating/updating user for {phone}")
+        logger.info(f"👤 Creating/updating user for {phone}")
 
         user, created = CustomUser.objects.get_or_create(
             phone_number=phone,
@@ -235,9 +247,9 @@ class OtpVerifySerializer(serializers.Serializer):
         )
 
         if created:
-            logger.info(f"New user created: {phone}")
+            logger.info(f"✅ New user created: {phone}")
         else:
-            logger.info(f"Existing user logged in: {phone}")
+            logger.info(f"🔓 Existing user logged in: {phone}")
 
         # OTP already cleaned up by OTPManager.verify_otp()
         return user
@@ -249,7 +261,7 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         phone = attrs.get("phone_number")
-        code = attrs.get("code", "").strip()  # Bo'sh joylarni olib tashlash
+        code = attrs.get("code", "").strip()
 
         cached_otp = cache.get(f"otp_{phone}")
         if not cached_otp:
@@ -277,7 +289,7 @@ class LoginSerializer(serializers.Serializer):
         cache.delete(f"otp_{phone}")
         cache.delete(f"otp_attempts_{phone}")
         cache.delete(f"otp_last_sent_{phone}")
-        cache.delete(f"otp_ready_{phone}")  # Cache tayyor signalini ham o'chirish
+        cache.delete(f"otp_ready_{phone}")
 
         attrs["user"] = user
         return attrs
@@ -296,12 +308,12 @@ class MedicalFileSerializer(serializers.ModelSerializer):
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Telefon + parol orqali JWT olish.
-    Token ichiga role, phone_number va full_name qo‘shamiz.
+    Token ichiga role, phone_number va full_name qo'shamiz.
     """
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        # Qo‘shimcha claimlar
+        # Qo'shimcha claimlar
         token['role'] = user.role
         token['phone_number'] = user.phone_number
         token['full_name'] = user.get_full_name()
@@ -309,7 +321,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        # User haqida qo‘shimcha info response’da qaytsin
+        # User haqida qo'shimcha info response'da qaytsin
         data['user'] = {
             "id": self.user.id,
             "phone_number": self.user.phone_number,
@@ -349,7 +361,7 @@ class OperatorLoginSerializer(TokenObtainPairSerializer):
         return data
 
 
-# --------------------------------------------PARTNET PANEL-------------------------------------------------------------
+# --------------------------------------------PARTNER PANEL-------------------------------------------------------------
 
 
 class PartnerLoginSerializer(TokenObtainPairSerializer):
@@ -409,26 +421,3 @@ class PartnerLoginSerializer(TokenObtainPairSerializer):
             data['user']['partner_code'] = self.user.partner_profile.code
 
         return data
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

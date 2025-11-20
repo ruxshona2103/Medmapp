@@ -12,7 +12,6 @@ Production-grade OTPManager
 import logging
 import secrets
 import re
-import json
 from typing import Optional, Tuple
 from datetime import timedelta
 
@@ -21,7 +20,8 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from .models import OTP  # Assumes OTP model has id, phone_number, code, created_at, expires_at
+from .models import OTP
+
 logger = logging.getLogger(__name__)
 
 # Optional import - best-effort: if django_redis available, use low-level redis for locking & pipeline
@@ -47,6 +47,7 @@ class OTPManager:
 
     @staticmethod
     def normalize_phone(phone: str) -> str:
+        """Normalize phone number to consistent format"""
         if not phone:
             return phone
         phone = re.sub(r'[\s\-\(\)]+', '', phone)
@@ -76,6 +77,7 @@ class OTPManager:
 
     @staticmethod
     def generate_otp() -> str:
+        """Generate cryptographically secure OTP"""
         return ''.join(str(secrets.randbelow(10)) for _ in range(OTPManager.OTP_LENGTH))
 
     @classmethod
@@ -95,11 +97,12 @@ class OTPManager:
                 # cache.add returns True only if key didn't exist
                 return cache.add(lock_key, "1", timeout=cls.LOCK_TTL)
         except Exception as e:
-            logger.exception(f"Lock acquire error for {phone}: {e}")
+            logger.exception(f"❌ Lock acquire error for {phone}: {e}")
             return False
 
     @classmethod
     def _release_lock(cls, phone: str):
+        """Release lock"""
         try:
             lock_key = cls._lock_key(phone)
             if HAS_DJANGO_REDIS:
@@ -108,12 +111,13 @@ class OTPManager:
             else:
                 cache.delete(lock_key)
         except Exception as e:
-            logger.exception(f"Lock release error for {phone}: {e}")
+            logger.exception(f"❌ Lock release error for {phone}: {e}")
 
     @classmethod
     def create_otp(cls, phone: str) -> Tuple[str, bool]:
+        """Create OTP with dual storage (cache + DB)"""
         phone = cls.normalize_phone(phone)
-        logger.info(f"Request create_otp for {phone}")
+        logger.info(f"📞 Request create_otp for {phone}")
 
         # Cooldown check (last_sent)
         last_sent = cache.get(cls._last_sent_key(phone))
@@ -121,14 +125,15 @@ class OTPManager:
             elapsed = (timezone.now() - last_sent).total_seconds()
             if elapsed < cls.COOLDOWN_SECONDS:
                 wait = int(cls.COOLDOWN_SECONDS - elapsed)
-                logger.warning(f"Cooldown active for {phone}, wait {wait}s")
+                logger.warning(f"⏳ Cooldown active for {phone}, wait {wait}s")
                 raise ValueError(f"OTP allaqachon yuborilgan. Iltimos, {wait} soniyadan keyin qayta so'rang.")
 
         # Acquire per-phone lock to avoid race conditions in generation
         got_lock = cls._acquire_lock(phone)
         if not got_lock:
             # If cannot acquire lock, refuse quickly (avoids duplicate writes)
-            raise ValueError("Iltimos, bir necha soniya kuting va qayta urinib ko‘ring.")
+            logger.warning(f"🔒 Lock not acquired for {phone}")
+            raise ValueError("Iltimos, bir necha soniya kuting va qayta urinib ko'ring.")
 
         try:
             otp_code = cls.generate_otp()
@@ -141,6 +146,8 @@ class OTPManager:
                     code=otp_code,
                     expires_at=expires_at
                 )
+
+            logger.info(f"💾 OTP saved to DB: {phone} (id={otp_obj.id})")
 
             # Now try to write to cache atomically (use redis pipeline if available)
             cache_key = cls._cache_key(phone)
@@ -158,17 +165,19 @@ class OTPManager:
                     pipe.set(last_sent_key, int(timezone.now().timestamp()), ex=cls.OTP_EXPIRY_SECONDS)
                     pipe.set(db_id_key, int(otp_obj.id), ex=cls.OTP_EXPIRY_SECONDS)
                     pipe.execute()
+                    logger.info(f"✅ Redis cache set for {phone}")
                 else:
                     cache.set(cache_key, otp_code, timeout=cls.OTP_EXPIRY_SECONDS)
                     cache.set(attempt_key, 0, timeout=cls.OTP_EXPIRY_SECONDS)
                     cache.set(last_sent_key, timezone.now(), timeout=cls.OTP_EXPIRY_SECONDS)
                     cache.set(db_id_key, otp_obj.id, timeout=cls.OTP_EXPIRY_SECONDS)
+                    logger.info(f"✅ Cache set for {phone}")
             except Exception as e:
                 # Cache write failed - still OK because DB has the record.
-                logger.exception(f"Cache write failed for {phone}, DB contains OTP id {otp_obj.id}: {e}")
+                logger.exception(f"⚠️ Cache write failed for {phone}, DB contains OTP id {otp_obj.id}: {e}")
                 # We don't raise; rely on DB fallback in verify
 
-            logger.info(f"OTP created for {phone} (db_id={otp_obj.id})")
+            logger.info(f"✅ OTP created for {phone} (db_id={otp_obj.id})")
             return otp_code, True
 
         finally:
@@ -176,9 +185,10 @@ class OTPManager:
 
     @classmethod
     def verify_otp(cls, phone: str, code: str) -> Tuple[bool, str]:
+        """Verify OTP with cache-first, DB fallback"""
         phone = cls.normalize_phone(phone)
         code = (code or "").strip()
-        logger.info(f"Verifying OTP for {phone}")
+        logger.info(f"🔍 Verifying OTP for {phone}")
 
         cache_key = cls._cache_key(phone)
         attempt_key = cls._attempt_key(phone)
@@ -187,8 +197,9 @@ class OTPManager:
         try:
             # Try cache-first path
             cached = cache.get(cache_key)
+            logger.info(f"📦 Cache lookup for {phone}: {'HIT' if cached else 'MISS'}")
         except Exception as e:
-            logger.exception(f"Cache read error for {phone}: {e}")
+            logger.exception(f"❌ Cache read error for {phone}: {e}")
             cached = None
 
         # Helper to increment attempts safely
@@ -198,35 +209,37 @@ class OTPManager:
                     r = get_redis_connection("default")
                     val = r.incr(attempt_key)
                     r.expire(attempt_key, cls.OTP_EXPIRY_SECONDS)
+                    logger.info(f"🔢 Attempts incremented (Redis) for {phone}: {val}")
                     return int(val)
                 else:
                     cur = cache.get(attempt_key, 0) or 0
                     cur += 1
                     cache.set(attempt_key, cur, timeout=cls.OTP_EXPIRY_SECONDS)
+                    logger.info(f"🔢 Attempts incremented (Cache) for {phone}: {cur}")
                     return cur
             except Exception as e:
-                logger.exception(f"Attempt increment failed for {phone}: {e}")
+                logger.exception(f"❌ Attempt increment failed for {phone}: {e}")
                 return 0
 
         # If cache present, verify directly (fast path)
         if cached is not None:
-            logger.debug(f"Cache hit for {phone}")
+            logger.debug(f"🚀 Fast path: Cache hit for {phone}")
             if secrets.compare_digest(str(cached), str(code)):
                 # success -> cleanup only the specific OTP
                 cls._cleanup_specific_otp(phone)
-                logger.info(f"OTP verified (cache) for {phone}")
+                logger.info(f"✅ OTP verified (cache) for {phone}")
                 return True, "OTP tasdiqlandi!"
             else:
                 attempts = incr_attempts()
                 remaining = max(cls.MAX_ATTEMPTS - attempts, 0)
-                logger.warning(f"Wrong OTP (cache) for {phone}. Attempts: {attempts}/{cls.MAX_ATTEMPTS}")
+                logger.warning(f"❌ Wrong OTP (cache) for {phone}. Attempts: {attempts}/{cls.MAX_ATTEMPTS}")
                 if attempts >= cls.MAX_ATTEMPTS:
                     cls._cleanup_specific_otp(phone)
                     return False, "Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang."
                 return False, f"Noto'g'ri kod. Qolgan urinishlar: {remaining}"
 
         # Cache miss -> fallback to DB
-        logger.debug(f"Cache miss for {phone}, checking DB fallback")
+        logger.debug(f"🐌 Slow path: Cache miss for {phone}, checking DB fallback")
         try:
             otp_obj = OTP.objects.filter(
                 phone_number=phone,
@@ -234,34 +247,37 @@ class OTPManager:
             ).order_by('-created_at').first()
 
             if not otp_obj:
-                logger.warning(f"No valid OTP in DB for {phone}")
+                logger.warning(f"❌ No valid OTP in DB for {phone}")
                 return False, "OTP topilmadi yoki muddati tugagan. Iltimos, yangi OTP so'rang."
+
+            logger.info(f"💾 DB fallback: Found OTP for {phone} (id={otp_obj.id})")
 
             # Populate cache with DB value for faster subsequent verifies
             try:
                 cache.set(cache_key, otp_obj.code, timeout=cls.OTP_EXPIRY_SECONDS)
                 cache.set(attempt_key, 0, timeout=cls.OTP_EXPIRY_SECONDS)
                 cache.set(cls._db_id_key(phone), otp_obj.id, timeout=cls.OTP_EXPIRY_SECONDS)
+                logger.info(f"♻️ Cache warmed from DB for {phone}")
             except Exception:
-                logger.exception(f"Failed to warm cache for {phone} from DB")
+                logger.exception(f"⚠️ Failed to warm cache for {phone} from DB")
 
             if secrets.compare_digest(str(otp_obj.code), str(code)):
                 # success: delete specific DB record and cleanup cache keys
                 cls._cleanup_specific_otp(phone, otp_obj_id=otp_obj.id)
-                logger.info(f"OTP verified (DB fallback) for {phone}")
+                logger.info(f"✅ OTP verified (DB fallback) for {phone}")
                 return True, "OTP tasdiqlandi!"
             else:
                 attempts = incr_attempts()
                 remaining = max(cls.MAX_ATTEMPTS - attempts, 0)
-                logger.warning(f"Wrong OTP (DB fallback) for {phone}. Attempts: {attempts}/{cls.MAX_ATTEMPTS}")
+                logger.warning(f"❌ Wrong OTP (DB fallback) for {phone}. Attempts: {attempts}/{cls.MAX_ATTEMPTS}")
                 if attempts >= cls.MAX_ATTEMPTS:
-                    cls._cleanup_specific_otp(phone)
+                    cls._cleanup_specific_otp(phone, otp_obj_id=otp_obj.id)
                     return False, "Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang."
                 return False, f"Noto'g'ri kod. Qolgan urinishlar: {remaining}"
 
         except Exception as e:
-            logger.exception(f"DB error while verifying OTP for {phone}: {e}")
-            return False, "Server xatolik. Iltimos, qayta urinib ko‘ring."
+            logger.exception(f"❌ DB error while verifying OTP for {phone}: {e}")
+            return False, "Server xatolik. Iltimos, qayta urinib ko'ring."
 
     @classmethod
     def _cleanup_specific_otp(cls, phone: str, otp_obj_id: Optional[int] = None):
@@ -275,25 +291,43 @@ class OTPManager:
         last_sent_key = cls._last_sent_key(phone)
         db_id_key = cls._db_id_key(phone)
 
-        # Delete cache keys
+        logger.info(f"🧹 Cleanup started for {phone} (otp_id={otp_obj_id or 'N/A'})")
+
+        # Delete cache keys (batch if possible)
         try:
-            cache.delete(cache_key)
-            cache.delete(attempt_key)
-            cache.delete(last_sent_key)
-            cache.delete(db_id_key)
+            if HAS_DJANGO_REDIS:
+                r = get_redis_connection("default")
+                pipe = r.pipeline()
+                pipe.delete(cache_key)
+                pipe.delete(attempt_key)
+                pipe.delete(last_sent_key)
+                pipe.delete(db_id_key)
+                deleted = pipe.execute()
+                logger.info(f"✅ Redis cache cleared for {phone}: {deleted}")
+            else:
+                cache.delete(cache_key)
+                cache.delete(attempt_key)
+                cache.delete(last_sent_key)
+                cache.delete(db_id_key)
+                logger.info(f"✅ Cache cleared for {phone}")
         except Exception as e:
-            logger.exception(f"Cache cleanup error for {phone}: {e}")
+            logger.exception(f"❌ Cache cleanup error for {phone}: {e}")
 
         # Delete DB record(s) carefully
         try:
             if otp_obj_id:
-                OTP.objects.filter(id=otp_obj_id).delete()
+                deleted_count = OTP.objects.filter(id=otp_obj_id).delete()[0]
+                logger.info(f"✅ Deleted OTP #{otp_obj_id} from DB (count={deleted_count})")
             else:
                 # If id not provided, remove only recently created ones (short window)
                 cutoff = timezone.now() - timedelta(seconds=cls.OTP_EXPIRY_SECONDS + 5)
                 # delete only non-expired OTPs created within window to avoid erasing historical records
-                OTP.objects.filter(phone_number=phone, created_at__gt=cutoff).delete()
+                deleted_count = OTP.objects.filter(
+                    phone_number=phone,
+                    created_at__gt=cutoff
+                ).delete()[0]
+                logger.info(f"✅ Deleted {deleted_count} OTP(s) from DB for {phone}")
         except Exception as e:
-            logger.exception(f"DB cleanup error for {phone}: {e}")
+            logger.exception(f"❌ DB cleanup error for {phone}: {e}")
 
-        logger.info(f"Cleanup specific OTP done for {phone}")
+        logger.info(f"✅ Cleanup complete for {phone}")
