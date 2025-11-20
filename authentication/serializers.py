@@ -62,15 +62,71 @@ class OtpRequestSerializer(serializers.Serializer):
     def create(self, validated_data):
         phone = validated_data["phone_number"]
 
-        # Cache'ga AVVAL saqlash (race condition oldini olish)
-        otp_code = OtpService.send_otp(phone)
+        # Agar oxirgi 60 soniyada OTP yuborilgan bo'lsa, qayta yubormaslik (spam oldini olish)
+        last_sent = cache.get(f"otp_last_sent_{phone}")
+        if last_sent:
+            from django.utils import timezone
+            time_passed = (timezone.now() - last_sent).total_seconds()
+            if time_passed < 60:
+                wait_time = int(60 - time_passed)
+                raise serializers.ValidationError(
+                    f"OTP allaqachon yuborilgan. {wait_time} soniyadan keyin qayta so'rang."
+                )
+
+        # MUHIM: OTP generatsiya qilish
+        from authentication.otp_service import OtpService
+        otp_code = OtpService._generate_otp()
+
+        # 1. AVVAL cache'ga saqlash (foydalanuvchi tez kiritsa ham tayyor bo'ladi)
         cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
         cache.set(f"otp_attempts_{phone}", 0, timeout=300)  # Urinishlarni reset
+        cache.set(f"otp_last_sent_{phone}", timezone.now(), timeout=300)  # Oxirgi yuborish vaqti
+
+        # 2. KEYIN SMS yuborish (bu vaqt oladi, lekin cache tayyor)
+        sms_sent = False
+        sms_error = None
+
+        try:
+            # SMS yuborish uchun to'liq metoddan foydalanamiz
+            # Lekin avval tokenni olib, keyin SMS yuboramiz
+            token = OtpService._get_token()
+            payload = {
+                "mobile_phone": phone,
+                "message": f"medmapp.uz platformasiga kirish uchun tasdiqlash kodi: {otp_code}",
+                "from": OtpService.FROM
+            }
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            import requests
+            response = requests.post(OtpService.SMS_URL, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            sms_sent = True
+            print(f"✅ OTP {otp_code} raqamiga yuborildi: {phone}")
+        except Exception as e:
+            # SMS yuborishda xatolik bo'lsa ham cache'da bor (test uchun)
+            sms_error = str(e)
+            print(f"⚠️ SMS yuborishda xatolik: {e}")
+
+            # Production'da SMS yuborilmasa cache'dan o'chiramiz
+            if not settings.DEBUG:
+                cache.delete(f"otp_{phone}")
+                cache.delete(f"otp_attempts_{phone}")
+                cache.delete(f"otp_last_sent_{phone}")
+                raise serializers.ValidationError("SMS yuborishda xatolik yuz berdi. Qayta urinib ko'ring.")
+
+        # Cache tayyor ekanligi haqida signal
+        cache.set(f"otp_ready_{phone}", True, timeout=300)
 
         return {
             "message": "OTP muvaffaqiyatli yuborildi!",
             "phone_number": phone,
-            "otp": otp_code if settings.DEBUG else "****"
+            "otp": otp_code if settings.DEBUG else "****",
+            "cache_ready": True,  # Frontend uchun signal
+            "sms_sent": sms_sent,  # SMS yuborilganmi?
+            "estimated_delivery": "5-30 soniya",  # SMS yetib borish vaqti
         }
 
 
@@ -86,7 +142,18 @@ class OtpVerifySerializer(serializers.Serializer):
         cached_code = cache.get(f"otp_{phone}")
 
         if not cached_code:
-            raise serializers.ValidationError("OTP yuborilmagan yoki muddati tugagan.")
+            # Qo'shimcha diagnostika
+            cache_ready = cache.get(f"otp_ready_{phone}")
+            if cache_ready:
+                # Cache tayyor, lekin OTP yo'q (muddati tugagan bo'lishi mumkin)
+                raise serializers.ValidationError(
+                    "OTP muddati tugagan (5 daqiqa). Iltimos, yangi OTP so'rang."
+                )
+            else:
+                # Cache tayyor emas (OTP so'ralmagan yoki xato bo'lgan)
+                raise serializers.ValidationError(
+                    "OTP so'ralmagan. Iltimos, avval 'OTP so'rash' tugmasini bosing."
+                )
 
         # Urinishlarni tekshirish (max 3 urinish)
         attempts = cache.get(f"otp_attempts_{phone}", 0)
@@ -94,6 +161,7 @@ class OtpVerifySerializer(serializers.Serializer):
             # OTP ni o'chirish
             cache.delete(f"otp_{phone}")
             cache.delete(f"otp_attempts_{phone}")
+            cache.delete(f"otp_ready_{phone}")
             raise serializers.ValidationError("Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang.")
 
         # Kodni solishtirish (strip qilingan)
@@ -130,6 +198,8 @@ class OtpVerifySerializer(serializers.Serializer):
         # MUHIM: OTP ishlatilgandan keyin cache'dan o'chirish
         cache.delete(f"otp_{phone}")
         cache.delete(f"otp_attempts_{phone}")
+        cache.delete(f"otp_last_sent_{phone}")
+        cache.delete(f"otp_ready_{phone}")  # Cache tayyor signalini ham o'chirish
 
         return user
 
@@ -151,6 +221,7 @@ class LoginSerializer(serializers.Serializer):
         if attempts >= 3:
             cache.delete(f"otp_{phone}")
             cache.delete(f"otp_attempts_{phone}")
+            cache.delete(f"otp_ready_{phone}")
             raise serializers.ValidationError({"detail": "Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang."})
 
         # Kodni solishtirish (strip qilingan)
@@ -166,6 +237,8 @@ class LoginSerializer(serializers.Serializer):
         # OTP ishlatilgandan keyin o'chirish
         cache.delete(f"otp_{phone}")
         cache.delete(f"otp_attempts_{phone}")
+        cache.delete(f"otp_last_sent_{phone}")
+        cache.delete(f"otp_ready_{phone}")  # Cache tayyor signalini ham o'chirish
 
         attrs["user"] = user
         return attrs
