@@ -74,25 +74,37 @@ class OtpRequestSerializer(serializers.Serializer):
                     f"OTP allaqachon yuborilgan. {wait_time} soniyadan keyin qayta so'rang."
                 )
 
-        # 1. OTP generatsiya qilish va darhol cache'ga saqlash
+        # 1. OTP generatsiya qilish
         otp_code = str(random.randint(100000, 999999))
 
-        # 2. AVVAL cache'ga saqlash (race condition oldini olish)
+        print(f"🔑 Generated OTP: {otp_code} for phone: {phone}")
+
+        # 2. AVVAL cache'ga saqlash va VERIFY qilish
         cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
         cache.set(f"otp_attempts_{phone}", 0, timeout=300)  # Urinishlarni reset
         cache.set(f"otp_last_sent_{phone}", timezone.now(), timeout=300)  # Oxirgi yuborish vaqti
-        cache.set(f"otp_ready_{phone}", True, timeout=300)  # Cache tayyor signal
 
-        # 3. KEYIN SMS yuborish (bu vaqt oladi, lekin cache allaqachon tayyor)
+        # MUHIM: Cache'ga yozilganini verify qilish
+        import time
+        time.sleep(0.1)  # 100ms kutish - database cache commit uchun
+
+        # Verify cache
+        cached_check = cache.get(f"otp_{phone}")
+        if cached_check != otp_code:
+            print(f"⚠️ CACHE XATOLIK! Saqlanmadi. Saved: {otp_code}, Retrieved: {cached_check}")
+            raise serializers.ValidationError("Server xatolik: Cache ishlamayapti. Administrator bilan bog'laning.")
+
+        print(f"✅ Cache verified: {cached_check}")
+
+        # 3. SMS yuborish
         sms_sent = False
         try:
-            # Tokenni olish
             token = OtpService._get_token()
 
             payload = {
                 "mobile_phone": phone,
                 "message": f"medmapp.uz platformasiga kirish uchun tasdiqlash kodi: {otp_code}",
-                "from": "4546"  # Eskiz FROM raqami
+                "from": "4546"
             }
             headers = {
                 "Authorization": f"Bearer {token}",
@@ -107,9 +119,8 @@ class OtpRequestSerializer(serializers.Serializer):
             )
             response.raise_for_status()
             sms_sent = True
-            print(f"✅ OTP {otp_code} raqamiga yuborildi: {phone}")
+            print(f"✅ SMS yuborildi: {phone}")
         except Exception as e:
-            # SMS yuborishda xatolik
             print(f"⚠️ SMS yuborishda xatolik: {e}")
 
             # Production'da xatolik bo'lsa cache'ni tozalash
@@ -117,7 +128,6 @@ class OtpRequestSerializer(serializers.Serializer):
                 cache.delete(f"otp_{phone}")
                 cache.delete(f"otp_attempts_{phone}")
                 cache.delete(f"otp_last_sent_{phone}")
-                cache.delete(f"otp_ready_{phone}")
                 raise serializers.ValidationError("SMS yuborishda xatolik yuz berdi. Qayta urinib ko'ring.")
 
         return {
@@ -138,37 +148,45 @@ class OtpVerifySerializer(serializers.Serializer):
         phone = attrs.get("phone_number")
         code = attrs.get("code", "").strip()  # Bo'sh joylarni olib tashlash
 
+        print(f"🔍 Verify OTP: phone={phone}, code={code}")
+
         # Cache'dan OTP olish
         cached_code = cache.get(f"otp_{phone}")
 
+        print(f"🔍 Cached code: {cached_code}")
+
         if not cached_code:
-            # Qo'shimcha diagnostika
-            cache_ready = cache.get(f"otp_ready_{phone}")
-            if cache_ready:
-                # Cache tayyor, lekin OTP yo'q (muddati tugagan bo'lishi mumkin)
-                raise serializers.ValidationError(
-                    "OTP muddati tugagan (5 daqiqa). Iltimos, yangi OTP so'rang."
-                )
-            else:
-                # Cache tayyor emas (OTP so'ralmagan yoki xato bo'lgan)
-                raise serializers.ValidationError(
-                    "OTP so'ralmagan. Iltimos, avval 'OTP so'rash' tugmasini bosing."
-                )
+            print(f"❌ Cache bo'sh! Phone: {phone}")
+            raise serializers.ValidationError(
+                "OTP topilmadi yoki muddati tugagan. Iltimos, yangi OTP so'rang."
+            )
 
         # Urinishlarni tekshirish (max 3 urinish)
         attempts = cache.get(f"otp_attempts_{phone}", 0)
+        print(f"🔍 Attempts: {attempts}")
+
         if attempts >= 3:
             # OTP ni o'chirish
             cache.delete(f"otp_{phone}")
             cache.delete(f"otp_attempts_{phone}")
-            cache.delete(f"otp_ready_{phone}")
+            cache.delete(f"otp_last_sent_{phone}")
+            print(f"❌ Maksimal urinishlar tugadi: {phone}")
             raise serializers.ValidationError("Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang.")
 
-        # Kodni solishtirish (strip qilingan)
-        if str(cached_code).strip() != str(code).strip():
+        # Kodni solishtirish - ANIQ solishtirish
+        cached_code_clean = str(cached_code).strip()
+        input_code_clean = str(code).strip()
+
+        print(f"🔍 Comparing: cached='{cached_code_clean}' vs input='{input_code_clean}'")
+
+        if cached_code_clean != input_code_clean:
             # Urinishlarni oshirish
-            cache.set(f"otp_attempts_{phone}", attempts + 1, timeout=300)
-            raise serializers.ValidationError(f"Noto'g'ri kod. Qolgan urinishlar: {2 - attempts}")
+            new_attempts = attempts + 1
+            cache.set(f"otp_attempts_{phone}", new_attempts, timeout=300)
+            print(f"❌ Kod noto'g'ri! Attempts: {new_attempts}")
+            raise serializers.ValidationError(f"Noto'g'ri kod. Qolgan urinishlar: {3 - new_attempts}")
+
+        print(f"✅ Kod to'g'ri!")
 
         try:
             pending = PendingUser.objects.get(phone_number=phone)
