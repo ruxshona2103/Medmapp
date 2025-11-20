@@ -6,11 +6,13 @@ from config import settings
 from django.utils import timezone
 from datetime import timedelta
 from .otp_service import OtpService
+from .otp_manager import OTPManager  # ← NEW: Bulletproof OTP Manager
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed
-import requests  # SMS yuborish uchun
-import random  # OTP generatsiya uchun
+import requests
+import logging
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
@@ -23,6 +25,9 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    """
+    FIXED: Phone normalization added for consistency
+    """
     phone_number = serializers.CharField()
 
     class Meta:
@@ -30,15 +35,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['phone_number', 'first_name', 'last_name', 'district']
 
     def validate_phone_number(self, value):
+        # ✅ NORMALIZE phone number (CRITICAL FIX!)
+        value = OTPManager.normalize_phone(value)
+        logger.info(f"Register: normalized phone = {value}")
+
         if not value.startswith("+998"):
             raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak")
+
+        # Check against normalized phone
         if CustomUser.objects.filter(phone_number=value).exists():
             raise serializers.ValidationError("Bu raqam bilan ro'yxatdan o'tilgan")
+
+        # Also check PendingUser (allow update)
+        if PendingUser.objects.filter(phone_number=value).exists():
+            logger.info(f"PendingUser already exists for {value}, will update")
+
         return value
 
     def create(self, validated_data):
         phone = validated_data['phone_number']
-        pending_user, _ = PendingUser.objects.update_or_create(
+        logger.info(f"Creating PendingUser for {phone}")
+
+        pending_user, created = PendingUser.objects.update_or_create(
             phone_number=phone,
             defaults={
                 "first_name": validated_data.get("first_name", ""),
@@ -48,55 +66,72 @@ class RegisterSerializer(serializers.ModelSerializer):
                 "expires_at": timezone.now() + timedelta(minutes=5),
             }
         )
+
+        if created:
+            logger.info(f"✅ New PendingUser created: {phone}")
+        else:
+            logger.info(f"✅ PendingUser updated: {phone}")
+
         return pending_user
 
 class OtpRequestSerializer(serializers.Serializer):
+    """
+    BULLETPROOF OTP Request Serializer
+    - Dual storage (Cache + DB)
+    - Thread-safe
+    - Proper error handling
+    """
     phone_number = serializers.CharField()
 
     def validate_phone_number(self, value):
+        # Normalize phone number
+        original_value = value
+        value = OTPManager.normalize_phone(value)
+        logger.info(f"OTP Request: original={original_value}, normalized={value}")
+
         if not value.startswith("+998"):
             raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak.")
-        if not (PendingUser.objects.filter(phone_number=value).exists()
-                or CustomUser.objects.filter(phone_number=value).exists()):
+
+        # Check if user exists with detailed logging
+        pending_exists = PendingUser.objects.filter(phone_number=value).exists()
+        custom_exists = CustomUser.objects.filter(phone_number=value).exists()
+
+        logger.info(f"User check for {value}: PendingUser={pending_exists}, CustomUser={custom_exists}")
+
+        if not (pending_exists or custom_exists):
+            # Additional debug: check what's actually in the database
+            pending_count = PendingUser.objects.count()
+            custom_count = CustomUser.objects.count()
+            logger.error(f"❌ User not found for {value}! (PendingUsers: {pending_count}, CustomUsers: {custom_count})")
+
+            # Try to find similar phones (debug)
+            similar = PendingUser.objects.filter(phone_number__contains="998").values_list('phone_number', flat=True)[:5]
+            logger.error(f"Similar phones in DB: {list(similar)}")
+
             raise serializers.ValidationError("Avval ro'yxatdan o'ting.")
+
+        logger.info(f"✅ User found for {value}")
         return value
 
     def create(self, validated_data):
         phone = validated_data["phone_number"]
+        logger.info(f"OTP request for {phone}")
 
-        # Agar oxirgi 60 soniyada OTP yuborilgan bo'lsa, qayta yubormaslik (spam oldini olish)
-        last_sent = cache.get(f"otp_last_sent_{phone}")
-        if last_sent:
-            time_passed = (timezone.now() - last_sent).total_seconds()
-            if time_passed < 60:
-                wait_time = int(60 - time_passed)
-                raise serializers.ValidationError(
-                    f"OTP allaqachon yuborilgan. {wait_time} soniyadan keyin qayta so'rang."
-                )
+        try:
+            # Create OTP using bulletproof manager (dual storage)
+            otp_code, success = OTPManager.create_otp(phone)
 
-        # 1. OTP generatsiya qilish
-        otp_code = str(random.randint(100000, 999999))
+            if not success:
+                raise serializers.ValidationError("OTP yaratishda xatolik yuz berdi.")
 
-        print(f"🔑 Generated OTP: {otp_code} for phone: {phone}")
+        except ValueError as e:
+            # Cooldown or other validation error
+            raise serializers.ValidationError(str(e))
+        except Exception as e:
+            logger.error(f"OTP creation error for {phone}: {e}")
+            raise serializers.ValidationError("Server xatolik. Iltimos, qayta urinib ko'ring.")
 
-        # 2. AVVAL cache'ga saqlash va VERIFY qilish
-        cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
-        cache.set(f"otp_attempts_{phone}", 0, timeout=300)  # Urinishlarni reset
-        cache.set(f"otp_last_sent_{phone}", timezone.now(), timeout=300)  # Oxirgi yuborish vaqti
-
-        # MUHIM: Cache'ga yozilganini verify qilish
-        import time
-        time.sleep(0.1)  # 100ms kutish - database cache commit uchun
-
-        # Verify cache
-        cached_check = cache.get(f"otp_{phone}")
-        if cached_check != otp_code:
-            print(f"⚠️ CACHE XATOLIK! Saqlanmadi. Saved: {otp_code}, Retrieved: {cached_check}")
-            raise serializers.ValidationError("Server xatolik: Cache ishlamayapti. Administrator bilan bog'laning.")
-
-        print(f"✅ Cache verified: {cached_check}")
-
-        # 3. SMS yuborish
+        # Send SMS
         sms_sent = False
         try:
             token = OtpService._get_token()
@@ -119,88 +154,74 @@ class OtpRequestSerializer(serializers.Serializer):
             )
             response.raise_for_status()
             sms_sent = True
-            print(f"✅ SMS yuborildi: {phone}")
-        except Exception as e:
-            print(f"⚠️ SMS yuborishda xatolik: {e}")
+            logger.info(f"✅ SMS sent successfully to {phone}")
 
-            # Production'da xatolik bo'lsa cache'ni tozalash
-            if not settings.DEBUG:
-                cache.delete(f"otp_{phone}")
-                cache.delete(f"otp_attempts_{phone}")
-                cache.delete(f"otp_last_sent_{phone}")
-                raise serializers.ValidationError("SMS yuborishda xatolik yuz berdi. Qayta urinib ko'ring.")
+        except Exception as e:
+            logger.error(f"SMS sending error for {phone}: {e}")
+
+            # SMS failed - cleanup OTP
+            OTPManager._cleanup_otp(phone)
+
+            # Always raise error if SMS fails (even in DEBUG)
+            raise serializers.ValidationError(
+                "SMS yuborishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
+            )
 
         return {
             "message": "OTP muvaffaqiyatli yuborildi!",
             "phone_number": phone,
             "otp": otp_code if settings.DEBUG else "****",
-            "cache_ready": True,
             "sms_sent": sms_sent,
             "estimated_delivery": "5-30 soniya",
         }
 
-
 class OtpVerifySerializer(serializers.Serializer):
+    """
+    BULLETPROOF OTP Verify Serializer
+    - Dual storage fallback (Cache -> DB)
+    - Timing-safe comparison
+    - Thread-safe
+    - Comprehensive logging
+    """
     phone_number = serializers.CharField()
     code = serializers.CharField()
 
     def validate(self, attrs):
         phone = attrs.get("phone_number")
-        code = attrs.get("code", "").strip()  # Bo'sh joylarni olib tashlash
+        code = attrs.get("code", "").strip()
 
-        print(f"🔍 Verify OTP: phone={phone}, code={code}")
+        # Normalize phone
+        phone = OTPManager.normalize_phone(phone)
+        attrs["phone_number"] = phone
 
-        # Cache'dan OTP olish
-        cached_code = cache.get(f"otp_{phone}")
+        logger.info(f"Verifying OTP for {phone}")
 
-        print(f"🔍 Cached code: {cached_code}")
+        # Verify using bulletproof manager
+        success, message = OTPManager.verify_otp(phone, code)
 
-        if not cached_code:
-            print(f"❌ Cache bo'sh! Phone: {phone}")
-            raise serializers.ValidationError(
-                "OTP topilmadi yoki muddati tugagan. Iltimos, yangi OTP so'rang."
-            )
+        if not success:
+            logger.warning(f"OTP verification failed for {phone}: {message}")
+            raise serializers.ValidationError(message)
 
-        # Urinishlarni tekshirish (max 3 urinish)
-        attempts = cache.get(f"otp_attempts_{phone}", 0)
-        print(f"🔍 Attempts: {attempts}")
+        logger.info(f"✅ OTP verified successfully for {phone}")
 
-        if attempts >= 3:
-            # OTP ni o'chirish
-            cache.delete(f"otp_{phone}")
-            cache.delete(f"otp_attempts_{phone}")
-            cache.delete(f"otp_last_sent_{phone}")
-            print(f"❌ Maksimal urinishlar tugadi: {phone}")
-            raise serializers.ValidationError("Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang.")
-
-        # Kodni solishtirish - ANIQ solishtirish
-        cached_code_clean = str(cached_code).strip()
-        input_code_clean = str(code).strip()
-
-        print(f"🔍 Comparing: cached='{cached_code_clean}' vs input='{input_code_clean}'")
-
-        if cached_code_clean != input_code_clean:
-            # Urinishlarni oshirish
-            new_attempts = attempts + 1
-            cache.set(f"otp_attempts_{phone}", new_attempts, timeout=300)
-            print(f"❌ Kod noto'g'ri! Attempts: {new_attempts}")
-            raise serializers.ValidationError(f"Noto'g'ri kod. Qolgan urinishlar: {3 - new_attempts}")
-
-        print(f"✅ Kod to'g'ri!")
-
+        # Get or check pending user
         try:
             pending = PendingUser.objects.get(phone_number=phone)
+            attrs["pending_user"] = pending
         except PendingUser.DoesNotExist:
+            # Check if user already exists
             if not CustomUser.objects.filter(phone_number=phone).exists():
                 raise serializers.ValidationError("Bunday raqam uchun ro'yxatdan o'tish topilmadi.")
+            attrs["pending_user"] = None
 
-        attrs["pending_user"] = pending if 'pending' in locals() else None
         return attrs
-
 
     def create(self, validated_data):
         pending = validated_data.get("pending_user")
-        phone = pending.phone_number if pending else validated_data.get("phone_number")
+        phone = validated_data.get("phone_number")
+
+        logger.info(f"Creating/updating user for {phone}")
 
         user, created = CustomUser.objects.get_or_create(
             phone_number=phone,
@@ -213,12 +234,12 @@ class OtpVerifySerializer(serializers.Serializer):
             }
         )
 
-        # MUHIM: OTP ishlatilgandan keyin cache'dan o'chirish
-        cache.delete(f"otp_{phone}")
-        cache.delete(f"otp_attempts_{phone}")
-        cache.delete(f"otp_last_sent_{phone}")
-        cache.delete(f"otp_ready_{phone}")  # Cache tayyor signalini ham o'chirish
+        if created:
+            logger.info(f"New user created: {phone}")
+        else:
+            logger.info(f"Existing user logged in: {phone}")
 
+        # OTP already cleaned up by OTPManager.verify_otp()
         return user
 
 
