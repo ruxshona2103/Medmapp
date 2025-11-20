@@ -56,13 +56,16 @@ class OtpRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError("Telefon raqam +998 bilan boshlanishi kerak.")
         if not (PendingUser.objects.filter(phone_number=value).exists()
                 or CustomUser.objects.filter(phone_number=value).exists()):
-            raise serializers.ValidationError("Avval ro‘yxatdan o‘ting.")
+            raise serializers.ValidationError("Avval ro'yxatdan o'ting.")
         return value
 
     def create(self, validated_data):
         phone = validated_data["phone_number"]
+
+        # Cache'ga AVVAL saqlash (race condition oldini olish)
         otp_code = OtpService.send_otp(phone)
         cache.set(f"otp_{phone}", otp_code, timeout=300)  # 5 daqiqa
+        cache.set(f"otp_attempts_{phone}", 0, timeout=300)  # Urinishlarni reset
 
         return {
             "message": "OTP muvaffaqiyatli yuborildi!",
@@ -77,19 +80,33 @@ class OtpVerifySerializer(serializers.Serializer):
 
     def validate(self, attrs):
         phone = attrs.get("phone_number")
-        code = attrs.get("code")
+        code = attrs.get("code", "").strip()  # Bo'sh joylarni olib tashlash
+
+        # Cache'dan OTP olish
         cached_code = cache.get(f"otp_{phone}")
 
         if not cached_code:
             raise serializers.ValidationError("OTP yuborilmagan yoki muddati tugagan.")
-        if cached_code != code:
-            raise serializers.ValidationError("Noto‘g‘ri kod.")
+
+        # Urinishlarni tekshirish (max 3 urinish)
+        attempts = cache.get(f"otp_attempts_{phone}", 0)
+        if attempts >= 3:
+            # OTP ni o'chirish
+            cache.delete(f"otp_{phone}")
+            cache.delete(f"otp_attempts_{phone}")
+            raise serializers.ValidationError("Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang.")
+
+        # Kodni solishtirish (strip qilingan)
+        if str(cached_code).strip() != str(code).strip():
+            # Urinishlarni oshirish
+            cache.set(f"otp_attempts_{phone}", attempts + 1, timeout=300)
+            raise serializers.ValidationError(f"Noto'g'ri kod. Qolgan urinishlar: {2 - attempts}")
 
         try:
             pending = PendingUser.objects.get(phone_number=phone)
         except PendingUser.DoesNotExist:
             if not CustomUser.objects.filter(phone_number=phone).exists():
-                raise serializers.ValidationError("Bunday raqam uchun ro‘yxatdan o‘tish topilmadi.")
+                raise serializers.ValidationError("Bunday raqam uchun ro'yxatdan o'tish topilmadi.")
 
         attrs["pending_user"] = pending if 'pending' in locals() else None
         return attrs
@@ -109,6 +126,11 @@ class OtpVerifySerializer(serializers.Serializer):
                 "is_active": True,
             }
         )
+
+        # MUHIM: OTP ishlatilgandan keyin cache'dan o'chirish
+        cache.delete(f"otp_{phone}")
+        cache.delete(f"otp_attempts_{phone}")
+
         return user
 
 
@@ -118,18 +140,32 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         phone = attrs.get("phone_number")
-        code = attrs.get("code")
+        code = attrs.get("code", "").strip()  # Bo'sh joylarni olib tashlash
 
         cached_otp = cache.get(f"otp_{phone}")
         if not cached_otp:
             raise serializers.ValidationError({"detail": "OTP muddati tugagan yoki yuborilmagan."})
-        if code != cached_otp:
-            raise serializers.ValidationError({"detail": "Noto‘g‘ri kod."})
+
+        # Urinishlarni tekshirish (max 3 urinish)
+        attempts = cache.get(f"otp_attempts_{phone}", 0)
+        if attempts >= 3:
+            cache.delete(f"otp_{phone}")
+            cache.delete(f"otp_attempts_{phone}")
+            raise serializers.ValidationError({"detail": "Maksimal urinishlar soni tugadi. Iltimos, yangi OTP so'rang."})
+
+        # Kodni solishtirish (strip qilingan)
+        if str(code).strip() != str(cached_otp).strip():
+            cache.set(f"otp_attempts_{phone}", attempts + 1, timeout=300)
+            raise serializers.ValidationError({"detail": f"Noto'g'ri kod. Qolgan urinishlar: {2 - attempts}"})
 
         try:
             user = User.objects.get(phone_number=phone)
         except User.DoesNotExist:
-            raise serializers.ValidationError({"detail": "Bunday foydalanuvchi topilmadi, oldin ro‘yxatdan o‘ting."})
+            raise serializers.ValidationError({"detail": "Bunday foydalanuvchi topilmadi, oldin ro'yxatdan o'ting."})
+
+        # OTP ishlatilgandan keyin o'chirish
+        cache.delete(f"otp_{phone}")
+        cache.delete(f"otp_attempts_{phone}")
 
         attrs["user"] = user
         return attrs
