@@ -148,8 +148,6 @@ class OTPManager:
                 )
 
             logger.info(f"💾 OTP saved to DB: {phone} (id={otp_obj.id})")
-
-            # Now try to write to cache atomically (use redis pipeline if available)
             cache_key = cls._cache_key(phone)
             attempt_key = cls._attempt_key(phone)
             last_sent_key = cls._last_sent_key(phone)
