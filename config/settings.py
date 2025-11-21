@@ -163,6 +163,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://www.medmapp.uz",
+    "https://dev.medmapp.uz/",
 
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
@@ -181,6 +182,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://www.medmapp.uz",
+    "https://dev.medmapp.uz/",
 
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
