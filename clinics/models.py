@@ -175,3 +175,18 @@ class NearbyStay(TimeStamped):
     rating = models.DecimalField(max_digits=3, decimal_places=1, blank=True, null=True)  # 4.5
 
     def __str__(self): return self.title_uz
+
+
+# === Jahon Klinikalari ===
+class WorldClinic(TranslatedText, TranslatedLong, TimeStamped):
+    """Jahon klinikalari - dunyo bo'ylab mashhur klinikalar"""
+    image = models.ImageField(upload_to="world_clinics/", blank=True, null=True)
+    famous_doctors_count = models.CharField(max_length=64, blank=True, null=True)  # "500+" yoki "1000+"
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, related_name="world_clinics", blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Jahon Klinikasi"
+        verbose_name_plural = "Jahon Klinikalari"
+
+    def __str__(self): return self.title_uz
