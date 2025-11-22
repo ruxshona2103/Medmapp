@@ -5,13 +5,13 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import (
-    Country, City, Accreditation, Specialty, Clinic
+    Country, City, Accreditation, Specialty, Clinic, WorldClinic
 )
 from .serializers import (
     CountrySerializer, CitySerializer, AccreditationSerializer, SpecialtySerializer,
     ClinicCardSerializer, ClinicDetailSerializer, DoctorSerializer,
     TreatmentPriceSerializer, ClinicInfrastructureSerializer, ClinicImageSerializer,
-    NearbyStaySerializer
+    NearbyStaySerializer, WorldClinicSerializer
 )
 
 # ======================================
@@ -135,5 +135,38 @@ class ClinicViewSet(viewsets.ReadOnlyModelViewSet):
         clinic = self.get_object()
         qs = clinic.nearby_stays.all()
         return Response(NearbyStaySerializer(qs, many=True, context={"request": request}).data)
+
+
+# ======================================
+# 🔹 Jahon Klinikalari (faqat GET)
+# ======================================
+
+class WorldClinicViewSet(viewsets.ReadOnlyModelViewSet):
+    """Jahon klinikalari ro'yxati (faqat GET)"""
+    serializer_class = WorldClinicSerializer
+
+    def get_queryset(self):
+        qs = WorldClinic.objects.select_related("country").filter(is_active=True).order_by("title_uz")
+        country_id = self.request.query_params.get("country")
+        if country_id:
+            qs = qs.filter(country_id=country_id)
+        return qs
+
+    @swagger_auto_schema(
+        operation_summary="Jahon klinikalari ro'yxati",
+        tags=["world-clinics"],
+        manual_parameters=[
+            openapi.Parameter("country", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Country ID"),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Jahon klinikasi detali",
+        tags=["world-clinics"],
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
 
