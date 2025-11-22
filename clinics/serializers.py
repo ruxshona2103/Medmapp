@@ -2,7 +2,8 @@
 from rest_framework import serializers
 from .models import (
     Country, City, Accreditation, Specialty, Clinic, ClinicSpecialty,
-    Doctor, TreatmentPrice, ClinicInfrastructure, ClinicImage, NearbyStay
+    Doctor, TreatmentPrice, ClinicInfrastructure, ClinicImage, NearbyStay,
+    WorldClinic
 )
 
 # === Small helpers ===
@@ -227,3 +228,28 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
     def get_top_prices(self, o):
         qs = o.prices.filter(is_active=True).order_by("order")[:6]
         return TreatmentPriceSerializer(qs, many=True, context=self.context).data
+
+
+# === Jahon Klinikalari ===
+class WorldClinicSerializer(serializers.ModelSerializer):
+    title = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    country = CountrySerializer(read_only=True)
+
+    class Meta:
+        model = WorldClinic
+        fields = ["id", "title", "description", "image_url", "famous_doctors_count", "country", "is_active"]
+
+    def get_title(self, o): return tr(o, "title")
+    def get_description(self, o): return tr(o, "description")
+    def get_image_url(self, o):
+        try:
+            if o.image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.image.url)
+                return o.image.url
+        except:
+            pass
+        return None
