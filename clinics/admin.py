@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
     Country, City, Accreditation, Specialty, Clinic, ClinicSpecialty,
-    Doctor, TreatmentPrice, ClinicInfrastructure, ClinicImage, NearbyStay
+    Doctor, TreatmentPrice, ClinicInfrastructure, ClinicImage, NearbyStay,
+    WorldClinic
 )
 
 # === Country ===
@@ -152,3 +153,19 @@ class NearbyAdmin(admin.ModelAdmin):
     list_display = ("clinic", "title_uz", "rating")
     list_filter = ("clinic",)
     autocomplete_fields = ['clinic']  # ✅ Qidiruv oynasi
+
+
+# === Jahon Klinikalari ===
+@admin.register(WorldClinic)
+class WorldClinicAdmin(admin.ModelAdmin):
+    list_display = ("id", "title_uz", "famous_doctors_count", "country", "is_active", "preview")
+    list_filter = ("country", "is_active")
+    search_fields = ("title_uz", "title_ru", "title_en")
+    autocomplete_fields = ['country']
+    readonly_fields = ("preview",)
+
+    def preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" style="width: 100px; height: 80px; object-fit: cover;" />', obj.image.url)
+        return "—"
+    preview.short_description = "Rasm"
