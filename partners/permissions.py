@@ -7,12 +7,6 @@ from rest_framework import permissions
 
 
 class IsPartnerUser(permissions.BasePermission):
-    """
-    Hamkor foydalanuvchi uchun ruxsat
-
-    Faqat hamkor profiliga ega bo'lgan userlar kirishlari mumkin.
-    """
-
     message = "Faqat hamkorlar uchun ruxsat etilgan."
 
     def has_permission(self, request, view):
@@ -20,18 +14,23 @@ class IsPartnerUser(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
 
-        # User'da partner_profile bormi?
-        return hasattr(request.user, 'partner_profile')
+        # User role'i partnermi?
+        return getattr(request.user, 'role', None) == 'partner'
 
     def has_object_permission(self, request, view, obj):
         """Object-level permission"""
         if not request.user or not request.user.is_authenticated:
             return False
 
+        # User role'i partner emasmi?
+        if getattr(request.user, 'role', None) != 'partner':
+            return False
+
         # Partner profilini olish
+        from partners.models import Partner
         try:
-            partner = request.user.partner_profile
-        except:
+            partner = Partner.objects.get(user=request.user)
+        except Partner.DoesNotExist:
             return False
 
         # Patient object bo'lsa
@@ -59,7 +58,7 @@ class IsPartnerOrReadOnly(permissions.BasePermission):
         return (
                 request.user and
                 request.user.is_authenticated and
-                hasattr(request.user, 'partner_profile')
+                getattr(request.user, 'role', None) == 'partner'
         )
 
 
@@ -67,8 +66,7 @@ class IsPartnerOrOperator(permissions.BasePermission):
     """
     Hamkor yoki Operator uchun ruxsat
 
-    Faqat hamkor profiliga ega bo'lgan yoki operator/admin rolida bo'lgan
-    userlar kirishlari mumkin.
+    Faqat hamkor yoki operator/admin rolida bo'lgan userlar kirishlari mumkin.
     """
 
     message = "Faqat hamkorlar va operatorlar uchun ruxsat etilgan."
@@ -78,8 +76,6 @@ class IsPartnerOrOperator(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
 
-        # User'da partner_profile bormi yoki operator/adminmi?
-        is_partner = hasattr(request.user, 'partner_profile')
-        is_operator = hasattr(request.user, 'role') and request.user.role in ('operator', 'admin')
-
-        return is_partner or is_operator
+        # User role'i partner yoki operator/adminmi?
+        role = getattr(request.user, 'role', None)
+        return role in ('partner', 'operator', 'admin')
