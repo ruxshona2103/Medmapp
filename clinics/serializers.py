@@ -188,22 +188,24 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
     city = CitySerializer(read_only=True)
     country = CountrySerializer(read_only=True)
     background_url = serializers.SerializerMethodField()
+    cover_url = serializers.SerializerMethodField()
     accreditations = AccreditationSerializer(many=True, read_only=True)
     specialties = SpecialtySerializer(many=True, read_only=True)
 
     # nested short blocks
     top_doctors = serializers.SerializerMethodField()
     top_prices = serializers.SerializerMethodField()
+    gallery = serializers.SerializerMethodField()
 
     class Meta:
         model = Clinic
         fields = [
             "id", "slug", "title", "description", "address",
             "city", "country",
-            "background_url", "rating", "founded_year",
+            "background_url", "cover_url", "rating", "founded_year",
             "bed_count", "department_count", "operating_room_count",
             "accreditations", "specialties",
-            "top_doctors", "top_prices",
+            "top_doctors", "top_prices", "gallery",
         ]
 
     def get_title(self, o): return tr(o, "title")
@@ -221,6 +223,17 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
             pass
         return None
 
+    def get_cover_url(self, o):
+        try:
+            if o.cover_image:
+                r = self.context.get("request")
+                if r:
+                    return r.build_absolute_uri(o.cover_image.url)
+                return o.cover_image.url
+        except:
+            pass
+        return None
+
     def get_top_doctors(self, o):
         qs = o.doctors.filter(is_top=True).order_by("order")[:3]
         return DoctorSerializer(qs, many=True, context=self.context).data
@@ -228,6 +241,10 @@ class ClinicDetailSerializer(serializers.ModelSerializer):
     def get_top_prices(self, o):
         qs = o.prices.filter(is_active=True).order_by("order")[:6]
         return TreatmentPriceSerializer(qs, many=True, context=self.context).data
+
+    def get_gallery(self, o):
+        qs = o.gallery.all().order_by("order", "id")
+        return ClinicImageSerializer(qs, many=True, context=self.context).data
 
 
 # === Jahon Klinikalari ===
