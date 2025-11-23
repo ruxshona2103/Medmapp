@@ -1,27 +1,25 @@
-# ===============================================================
-# PARTNER PANEL - VIEWS (FINAL INTEGRATED)
-# ===============================================================
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, status, filters, generics
+from rest_framework import viewsets, filters, generics, status
 from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
+from rest_framework.response import Response
 
 from .models import PartnerResponseDocument
 from .serializers import (
     PartnerPatientListSerializer,
     PartnerPatientDetailSerializer,
     PartnerResponseUploadSerializer,
-    PartnerProfileSerializer, PartnerResponseSerializer,
+    PartnerProfileSerializer, PartnerResponseSerializer
 )
-from .permissions import IsPartnerUser, IsPartnerOrOperator
 from patients.models import Patient, PatientHistory, PatientDocument
 from core.models import Stage
+from rest_framework.permissions import IsAuthenticated
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from .permissions import IsPartnerUser, IsPartnerOrOperator
+
 
 import logging
 logger = logging.getLogger(__name__)
@@ -40,12 +38,6 @@ class PartnerPagination(PageNumberPagination):
 # 🧩 PARTNER PANEL - DOCUMENTS BOSQICHIDAGI BEMORLAR
 # ===============================================================
 class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    🩺 Partner panel - faqat `DOCUMENTS` bosqichidagi bemorlar.
-    Hamkor faqat shu bosqichdagi bemorlarga fayl yuklashi mumkin.
-    Operator barcha bemorlarni ko'rishi mumkin.
-    """
-
     permission_classes = [IsAuthenticated, IsPartnerOrOperator]
     pagination_class = PartnerPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -70,21 +62,14 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
     # 📤 Hamkor → Bemor: Fayl yuborish (DOCUMENTS → RESPONSES)
     # ===============================================================
     @swagger_auto_schema(
-        operation_summary="📤 Hamkor bemorga fayl yuklaydi",
-        operation_description="""
-        Faqat `DOCUMENTS` bosqichidagi bemorlarga fayl yuklanadi.
-
-        🔁 Avtomatik o‘zgarishlar:
-        - Fayl `PartnerResponseDocument` va `PatientDocument`ga yoziladi
-        - Bemor bosqichi `RESPONSES`ga o‘tadi
-        - `PatientHistory` log yaratiladi
-        """,
+        operation_summary="Hamkor bemorga fayl yuklaydi",
+        operation_description="DOCUMENTS bosqichidagi bemorga fayl yuklash",
         manual_parameters=[
             openapi.Parameter("id", openapi.IN_PATH, description="Bemor ID", type=openapi.TYPE_INTEGER),
-            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description="Fayl (PDF/PNG/DOCX)"),
-            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description="Izoh (ixtiyoriy)"),
+            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description="Fayl"),
+            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING, required=False, description="Izoh"),
         ],
-        responses={201: "Fayl muvaffaqiyatli yuklandi"},
+        responses={201: "Fayl yuklandi"},
         tags=["partner"],
     )
     @action(
@@ -141,43 +126,34 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class PartnerProfileView(generics.RetrieveUpdateAPIView):
-    """
-    👤 Hamkor profili
-    GET /api/profile/
-    PUT /api/profile/
-    PATCH /api/profile/
-    """
     permission_classes = [IsAuthenticated, IsPartnerUser]
     serializer_class = PartnerProfileSerializer
 
     def get_object(self):
-        return self.request.user.partner_profile
+        from partners.models import Partner
+        user = self.request.user
+        profile, created = Partner.objects.get_or_create(
+            user=user,
+            defaults={
+                'name': user.first_name or user.phone_number or f'Partner_{user.id}',
+                'code': f'PARTNER_{user.id}',
+                'phone': getattr(user, 'phone_number', None),
+            }
+        )
+        return profile
 
-    @swagger_auto_schema(operation_summary="👤 Hamkor profili", tags=["partner"])
+    @swagger_auto_schema(operation_summary="Hamkor profili", operation_description="Hamkor profil ma'lumotlarini olish", tags=["partner"])
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="✏️ Profilni to'liq yangilash (PUT)", tags=["partner"])
+    @swagger_auto_schema(operation_summary="Profilni to'liq yangilash", operation_description="Hamkor profilini to'liq yangilash", tags=["partner"])
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="✏️ Profilni qisman yangilash (PATCH)", tags=["partner"])
+    @swagger_auto_schema(operation_summary="Profilni qisman yangilash", operation_description="Hamkor profilini qisman yangilash", tags=["partner"])
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 
-
-# ===============================================================
-# 📨 PARTNER JAVOB XATLARI (ALOHIDA GET API)
-# ===============================================================
-from rest_framework import viewsets, status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
-
-from .permissions import IsPartnerUser, IsPartnerOrOperator
-from .models import PartnerResponseDocument
-from .serializers import PartnerResponseSerializer
 
 
 class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
@@ -191,21 +167,10 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
 
     @swagger_auto_schema(
         tags=["partner"],
-        operation_summary="📄 Hamkor yuborgan barcha javob xatlari ro‘yxati",
-        operation_description="""
-        Hamkor tomonidan yuklangan barcha javob xatlari.
-
-        🔍 Qo‘shimcha filter:
-        - **patient_id**: faqat shu bemorning javoblarini olish uchun (masalan: `/partner/responses/?patient_id=3`)
-        """,
+        operation_summary="Hamkor javob xatlari ro'yxati",
+        operation_description="Hamkor yuklagan barcha javob xatlari",
         manual_parameters=[
-            openapi.Parameter(
-                "patient_id",
-                openapi.IN_QUERY,
-                description="Bemor ID (filter uchun, ixtiyoriy)",
-                type=openapi.TYPE_INTEGER,
-                required=False,
-            ),
+            openapi.Parameter("patient_id", openapi.IN_QUERY, description="Bemor ID bo'yicha filter", type=openapi.TYPE_INTEGER, required=False),
         ],
         responses={200: PartnerResponseSerializer(many=True)},
     )
@@ -233,8 +198,8 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
 
     @swagger_auto_schema(
         tags=["partner"],
-        operation_summary="📄 Bitta javob xatini olish (ID orqali)",
-        operation_description="Bitta `PartnerResponseDocument` ma’lumotini ID orqali olish",
+        operation_summary="Bitta javob xatini olish",
+        operation_description="ID orqali javob xati ma'lumotlarini olish",
         responses={200: PartnerResponseSerializer()},
     )
     def retrieve(self, request, *args, **kwargs):
@@ -256,11 +221,10 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(instance, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # ✅ ALOHIDA: Bemor ID bo‘yicha response olish
     @swagger_auto_schema(
         tags=["partner"],
-        operation_summary="👤 Bitta bemorga tegishli barcha javob xatlari",
-        operation_description="Masalan: `/partner/responses/patient/5/` → ID=5 bemorning barcha javoblari",
+        operation_summary="Bemor javob xatlari",
+        operation_description="Bemorga tegishli barcha javob xatlari",
         responses={200: PartnerResponseSerializer(many=True)},
     )
     def patient_responses(self, request, patient_id=None):
