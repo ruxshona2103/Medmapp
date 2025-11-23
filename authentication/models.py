@@ -206,8 +206,8 @@ class OperatorProfile(models.Model):
 
     @property
     def total_applications_processed(self):
-        from applications.models import Application
-        return Application.objects.filter(operator=self.user).count()
+        from applications.models import ApplicationHistory
+        return ApplicationHistory.objects.filter(author=self.user).count()
 
 
 
