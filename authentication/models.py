@@ -162,3 +162,52 @@ class MedicalFile(models.Model):
 
 
 
+
+
+class OperatorProfile(models.Model):
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='operator_profile',
+        verbose_name='Foydalanuvchi'
+    )
+    full_name = models.CharField(max_length=255, verbose_name='To\'liq ism')
+    employee_id = models.CharField(
+        max_length=50,
+        unique=True,
+        verbose_name='Xodim ID',
+        help_text='Masalan: "OP_001"'
+    )
+    department = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name='Bo\'lim'
+    )
+    phone = models.CharField(max_length=20, blank=True, null=True, verbose_name='Telefon')
+    email = models.EmailField(blank=True, null=True, verbose_name='Email')
+    is_active = models.BooleanField(default=True, verbose_name='Faol')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Yaratilgan vaqt')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Yangilangan vaqt')
+
+    class Meta:
+        verbose_name = 'Operator Profili'
+        verbose_name_plural = 'Operator Profillari'
+        ordering = ['-created_at']
+        db_table = 'authentication_operator_profile'
+
+    def __str__(self):
+        return f"{self.full_name} ({self.employee_id})"
+
+    @property
+    def total_patients_processed(self):
+        from patients.models import PatientHistory
+        return PatientHistory.objects.filter(author=self.user).count()
+
+    @property
+    def total_applications_processed(self):
+        from applications.models import Application
+        return Application.objects.filter(operator=self.user).count()
+
+
+

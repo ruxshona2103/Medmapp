@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, MedicalFile, OTP
+from .models import CustomUser, MedicalFile, OTP, OperatorProfile
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
@@ -38,5 +38,14 @@ class OTPAdmin(admin.ModelAdmin):
     list_filter = ('created_at', 'expires_at')
 
 
-# CustomUser ham admin panelga qo‘shiladi
+# CustomUser ham admin panelga qo'shiladi
 admin.site.register(CustomUser, CustomUserAdmin)
+
+
+@admin.register(OperatorProfile)
+class OperatorProfileAdmin(admin.ModelAdmin):
+    list_display = ('id', 'full_name', 'employee_id', 'department', 'phone', 'is_active', 'created_at')
+    list_filter = ('is_active', 'department', 'created_at')
+    search_fields = ('full_name', 'employee_id', 'phone', 'user__phone_number')
+    readonly_fields = ('created_at', 'updated_at')
+    raw_id_fields = ('user',)
