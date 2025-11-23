@@ -157,21 +157,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # LIST
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="📋 Suhbatlar ro'yxati",
-        operation_description=(
-            "Login qilingan foydalanuvchining barcha suhbatlari. "
-            "Status bo'yicha filter opsional."
-        ),
+        operation_summary="Suhbatlar ro'yxati",
+        operation_description="Foydalanuvchining barcha suhbatlari",
         manual_parameters=[
-            openapi.Parameter(
-                "status",
-                openapi.IN_QUERY,
-                type=openapi.TYPE_STRING,
-                enum=["barchasi", "yangi", "jarayonda", "yakunlangan"],
-                description="Status bo'yicha filter",
-            ),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa raqami"),
-            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifadagi elementlar soni (max 100)"),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING, enum=["barchasi", "yangi", "jarayonda", "yakunlangan"], description="Status filter"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
+            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Elementlar soni"),
         ],
         responses={200: ConversationSerializer(many=True)},
         tags=["conversations"],
@@ -190,8 +181,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # CREATE — faqat patient_profile_id + operator_id
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="➕ Yangi suhbat yaratish",
-        operation_description="Faqat Patient.id (`patient_profile_id`) va ixtiyoriy `operator_id` bilan.",
+        operation_summary="Yangi suhbat yaratish",
+        operation_description="Patient ID va operator ID bilan suhbat yaratish",
         request_body=ConversationCreateSerializer,
         responses={201: ConversationSerializer, 400: "Validation error"},
         tags=["conversations"],
@@ -280,7 +271,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # -------------------------------------------------------
     @swagger_auto_schema(
         methods=["get"],
-        operation_summary="💬 Suhbatdagi xabarlar",
+        operation_summary="Suhbatdagi xabarlar",
         manual_parameters=[
             openapi.Parameter("since_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Shundan keyingi xabarlar")
         ],
@@ -289,7 +280,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     )
     @swagger_auto_schema(
         methods=["post"],
-        operation_summary="✉️ Suhbatga xabar yuborish",
+        operation_summary="Suhbatga xabar yuborish",
         request_body=MessageSerializer,
         responses={201: MessageSerializer},
         tags=["conversations"],
@@ -306,7 +297,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # POST /conversations/{id}/mark-read/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="✅ Suhbatdagi xabarlarni o'qilgan qilish",
+        operation_summary="Xabarlarni o'qilgan qilish",
+        operation_description="Suhbatdagi barcha xabarlarni o'qilgan deb belgilash",
         responses={200: openapi.Response("Messages marked as read")},
         tags=["conversations"],
     )
@@ -322,7 +314,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # GET /conversations/my/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="🧑‍💻 Foydalanuvchining suhbatlari",
+        operation_summary="Foydalanuvchining suhbatlari",
+        operation_description="Joriy foydalanuvchi ishtirok etgan suhbatlar",
         responses={200: ConversationSerializer(many=True)},
         tags=["conversations"],
     )
@@ -348,7 +341,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # GET /conversations/{id}/prescriptions/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="💊 Suhbatga tegishli retseptlar",
+        operation_summary="Suhbatga tegishli retseptlar",
+        operation_description="Suhbatda yozilgan barcha retseptlar",
         responses={200: PrescriptionSerializer(many=True)},
         tags=["conversations"],
     )
@@ -365,7 +359,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # GET /conversations/{id}/summary/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="📝 Doktor xulosasi",
+        operation_summary="Doktor xulosasi",
+        operation_description="Suhbat uchun doktor xulosasi",
         responses={200: DoctorSummarySerializer()},
         tags=["conversations"],
     )
@@ -385,30 +380,17 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # -------------------------------------------------------
     @swagger_auto_schema(
         methods=['get'],
-        operation_summary="📁 Suhbatdagi fayllar ro'yxati",
+        operation_summary="Suhbatdagi fayllar ro'yxati",
         responses={200: openapi.Response(description="List of attachments", schema=AttachmentSerializer(many=True)), 403: "Forbidden"},
         tags=["conversations"],
     )
-    # SIZ TAQDIM ETGAN KOD - XATOLIK TUZATILGAN HOLATDA
     @swagger_auto_schema(
         methods=['post'],
-        operation_summary="📤 Fayl yuklash",
+        operation_summary="Fayl yuklash",
         consumes=['multipart/form-data'],
         manual_parameters=[
-            openapi.Parameter(
-                name='files',  # Swagger'da "files" (ko'plikda) ko'rinadi
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_FILE,
-                description="Fayl(lar) — bir nechta yuborish uchun birma-bir tanlang",
-                required=True,
-            ),
-            openapi.Parameter(
-                name='content',
-                in_=openapi.IN_FORM,
-                type=openapi.TYPE_STRING,
-                description="Fayl uchun izoh",
-                required=False,
-            ),
+            openapi.Parameter(name='files', in_=openapi.IN_FORM, type=openapi.TYPE_FILE, description="Fayl(lar)", required=True),
+            openapi.Parameter(name='content', in_=openapi.IN_FORM, type=openapi.TYPE_STRING, description="Izoh", required=False),
         ],
         responses={201: MessageSerializer, 400: "Xato", 403: "Taqiqlangan"},
         tags=["conversations"],
@@ -471,7 +453,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
     # POST /conversations/{id}/operator-mark-read/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="✅ Operator xabarlarni o'qilgan qiladi",
+        operation_summary="Operator xabarlarni o'qilgan qiladi",
+        operation_description="Operator tomonidan xabarlarni o'qilgan deb belgilash",
         responses={200: openapi.Response("Messages marked as read by operator")},
         tags=["conversations"],
     )
@@ -537,7 +520,8 @@ class MessageViewSet(
     # POST /messages/{id}/mark-read/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="✅ Bitta xabarni o‘qilgan qilish",
+        operation_summary="Bitta xabarni o'qilgan qilish",
+        operation_description="Tanlangan xabarni o'qilgan deb belgilash",
         responses={200: openapi.Response("Message marked as read")},
         tags=["messages"],
     )
@@ -565,7 +549,8 @@ class MessageViewSet(
     # POST /messages/{id}/reply/
     # -------------------------------------------------------
     @swagger_auto_schema(
-        operation_summary="↩️ Xabarga javob yozish",
+        operation_summary="Xabarga javob yozish",
+        operation_description="Tanlangan xabarga javob yuborish",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["content"],
