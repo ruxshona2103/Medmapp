@@ -20,35 +20,44 @@ from .permissions import IsOwner, HotelPermission, BookingPermission
 
 
 class HotelViewSet(viewsets.ModelViewSet):
+    """Mehmonxonalar"""
     queryset = Hotel.objects.all().order_by("name")
     serializer_class = HotelSerializer
     permission_classes = [HotelPermission]
-    parser_classes = [MultiPartParser, FormParser]  # Rasm upload uchun
+    parser_classes = [MultiPartParser, FormParser]
     filter_backends = [filters.SearchFilter]
     search_fields = ["name", "address"]
 
-    # 🔽 Rasm yuklash uchun endpoint (boshqa maydonlarsiz)
-    @action(
-        detail=True,
-        methods=["post"],
-        parser_classes=[MultiPartParser, FormParser],
-        url_path="upload-image",
-        url_name="upload_image",
-    )
+    @swagger_auto_schema(operation_summary="Mehmonxona yaratish", operation_description="Yangi mehmonxona qo'shish", tags=["hotels"])
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Mehmonxona detali", operation_description="Bitta mehmonxona ma'lumotlari", tags=["hotels"])
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Mehmonxonani yangilash", operation_description="Mehmonxona ma'lumotlarini yangilash", tags=["hotels"])
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Mehmonxonani qisman yangilash", operation_description="Mehmonxona ma'lumotlarini qisman yangilash", tags=["hotels"])
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Mehmonxonani o'chirish", operation_description="Mehmonxonani o'chirish", tags=["hotels"])
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
     @swagger_auto_schema(
-        operation_description="Faqat mehmonxona rasmi yuklash uchun.",
+        operation_summary="Mehmonxona rasmi yuklash",
+        operation_description="Mehmonxonaga rasm biriktirish",
         tags=["hotels"],
         manual_parameters=[
-            openapi.Parameter(
-                "image",
-                openapi.IN_FORM,
-                type=openapi.TYPE_FILE,
-                description="Yangi rasm faylini yuklash (faqat image).",
-                required=True,
-            ),
+            openapi.Parameter("image", openapi.IN_FORM, type=openapi.TYPE_FILE, description="Rasm fayli", required=True),
         ],
-        responses={200: openapi.Response("Image uploaded successfully")},
+        responses={200: "Rasm yuklandi"},
     )
+    @action(detail=True, methods=["post"], parser_classes=[MultiPartParser, FormParser], url_path="upload-image", url_name="upload_image")
     def upload_image(self, request, pk=None):
         hotel = self.get_object()
         serializer = HotelImageSerializer(hotel, data=request.data, partial=True)
@@ -59,21 +68,21 @@ class HotelViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
+        operation_summary="Mehmonxonalar ro'yxati",
+        operation_description="Mehmonxonalar ro'yxati filtrlar bilan",
         tags=["hotels"],
-        operation_description="Mehmonxonalar ro'yxati (filtrlar: search, min_price, max_price, stars).",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Mehmonxona nomi yoki manzili bo‘yicha qidirish"),
-            openapi.Parameter("min_price", openapi.IN_QUERY, type=openapi.TYPE_NUMBER, description="Minimal narx (masalan: 50)"),
-            openapi.Parameter("max_price", openapi.IN_QUERY, type=openapi.TYPE_NUMBER, description="Maksimal narx (masalan: 200)"),
-            openapi.Parameter("stars", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Yulduzlar soni (masalan: 3, 4, 5)"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa raqami (pagination uchun)"),
+            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Qidirish"),
+            openapi.Parameter("min_price", openapi.IN_QUERY, type=openapi.TYPE_NUMBER, description="Minimal narx"),
+            openapi.Parameter("max_price", openapi.IN_QUERY, type=openapi.TYPE_NUMBER, description="Maksimal narx"),
+            openapi.Parameter("stars", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Yulduzlar soni"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
         ],
-        responses={200: openapi.Response("OK", HotelSerializer(many=True))},
+        responses={200: HotelSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
 
-        # 🔍 Search — name va address bo‘yicha
         search = request.query_params.get("search")
         if search:
             qs = qs.filter(
@@ -81,7 +90,6 @@ class HotelViewSet(viewsets.ModelViewSet):
                 | models.Q(address__icontains=search)
             )
 
-        # 💰 Price filter
         min_price = request.query_params.get("min_price")
         max_price = request.query_params.get("max_price")
         if min_price:
@@ -89,12 +97,10 @@ class HotelViewSet(viewsets.ModelViewSet):
         if max_price:
             qs = qs.filter(price_per_night__lte=max_price)
 
-        # ⭐ Stars filter
         stars = request.query_params.get("stars")
         if stars:
             qs = qs.filter(stars=stars)
 
-        # 🔢 Pagination (oddiy)
         page = int(request.query_params.get("page", 1))
         per_page = 10
         start = (page - 1) * per_page
@@ -115,14 +121,11 @@ class VisaCreateView(generics.CreateAPIView):
         return VisaRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["Visa"],
-        operation_description="Foydalanuvchi yangi visa so‘rovi yuboradi.",
-        request_body=VisaRequestSerializer,  # yoki VisaRequestSerializer()
-        responses={
-            201: openapi.Response("Created", VisaRequestSerializer()),
-            400: "Bad Request",
-            401: "Unauthorized",
-        },
+        operation_summary="Visa so'rovi yaratish",
+        operation_description="Yangi visa so'rovi yuborish",
+        tags=["visa"],
+        request_body=VisaRequestSerializer,
+        responses={201: VisaRequestSerializer()},
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -136,13 +139,10 @@ class VisaRetrieveView(generics.RetrieveAPIView):
         return VisaRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["Visa"],
-        operation_description="Foydalanuvchining o‘ziga tegishli visa so‘rovini olish.",
-        responses={
-            200: openapi.Response("OK", VisaRequestSerializer()),
-            401: "Unauthorized",
-            404: "Not Found",
-        },
+        operation_summary="Visa so'rovini olish",
+        operation_description="Foydalanuvchining visa so'rovini olish",
+        tags=["visa"],
+        responses={200: VisaRequestSerializer()},
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -156,14 +156,11 @@ class TransferCreateView(generics.CreateAPIView):
         return TransferRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["Transfer"],
-        operation_description="Foydalanuvchi yangi transfer so‘rovi yuboradi.",
+        operation_summary="Transfer so'rovi yaratish",
+        operation_description="Yangi transfer so'rovi yuborish",
+        tags=["transfer"],
         request_body=TransferRequestSerializer,
-        responses={
-            201: openapi.Response("Created", TransferRequestSerializer()),
-            400: "Bad Request",
-            401: "Unauthorized",
-        },
+        responses={201: TransferRequestSerializer()},
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -177,19 +174,17 @@ class TransferRetrieveView(generics.RetrieveAPIView):
         return TransferRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["Transfer"],
-        operation_description="Foydalanuvchining transfer so‘rovini olish.",
-        responses={
-            200: openapi.Response("OK", TransferRequestSerializer()),
-            401: "Unauthorized",
-            404: "Not Found",
-        },
+        operation_summary="Transfer so'rovini olish",
+        operation_description="Foydalanuvchining transfer so'rovini olish",
+        tags=["transfer"],
+        responses={200: TransferRequestSerializer()},
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
 
 class BookingViewSet(viewsets.ModelViewSet):
+    """Mehmonxona bronlari"""
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated, BookingPermission]
 
@@ -202,6 +197,31 @@ class BookingViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    @swagger_auto_schema(operation_summary="Bronlar ro'yxati", operation_description="Barcha bronlar", tags=["bookings"])
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Bron yaratish", operation_description="Yangi bron qo'shish", tags=["bookings"])
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Bron detali", operation_description="Bitta bron ma'lumotlari", tags=["bookings"])
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Bronni yangilash", operation_description="Bron ma'lumotlarini yangilash", tags=["bookings"])
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Bronni qisman yangilash", operation_description="Bron ma'lumotlarini qisman yangilash", tags=["bookings"])
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Bronni o'chirish", operation_description="Bronni o'chirish", tags=["bookings"])
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+
 class TranslatorCreateView(generics.CreateAPIView):
     serializer_class = TranslatorRequestSerializer
 
@@ -209,14 +229,11 @@ class TranslatorCreateView(generics.CreateAPIView):
         return TranslatorRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["Translator"],
-        operation_description="Foydalanuvchi yangi tarjimon so‘rovi yuboradi.",
+        operation_summary="Tarjimon so'rovi yaratish",
+        operation_description="Yangi tarjimon so'rovi yuborish",
+        tags=["translator"],
         request_body=TranslatorRequestSerializer,
-        responses={
-            201: openapi.Response("Created", TranslatorRequestSerializer()),
-            400: "Bad Request",
-            401: "Unauthorized",
-        },
+        responses={201: TranslatorRequestSerializer()},
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -230,13 +247,10 @@ class TranslatorRetrieveView(generics.RetrieveAPIView):
         return TranslatorRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["Translator"],
-        operation_description="Foydalanuvchining tarjimon so‘rovini olish.",
-        responses={
-            200: openapi.Response("OK", TranslatorRequestSerializer()),
-            401: "Unauthorized",
-            404: "Not Found",
-        },
+        operation_summary="Tarjimon so'rovini olish",
+        operation_description="Foydalanuvchining tarjimon so'rovini olish",
+        tags=["translator"],
+        responses={200: TranslatorRequestSerializer()},
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -250,14 +264,11 @@ class SimCardCreateView(generics.CreateAPIView):
         return SimCardRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["SimCard"],
-        operation_description="Foydalanuvchi yangi SIM karta buyurtmasi qiladi.",
+        operation_summary="SIM karta buyurtmasi yaratish",
+        operation_description="Yangi SIM karta buyurtmasi yuborish",
+        tags=["simcard"],
         request_body=SimCardRequestSerializer,
-        responses={
-            201: openapi.Response("Created", SimCardRequestSerializer()),
-            400: "Bad Request",
-            401: "Unauthorized",
-        },
+        responses={201: SimCardRequestSerializer()},
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
@@ -271,13 +282,10 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
         return SimCardRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
-        tags=["SimCard"],
-        operation_description="Foydalanuvchining SIM karta buyurtmasini olish.",
-        responses={
-            200: openapi.Response("OK", SimCardRequestSerializer()),
-            401: "Unauthorized",
-            404: "Not Found",
-        },
+        operation_summary="SIM karta buyurtmasini olish",
+        operation_description="Foydalanuvchining SIM karta buyurtmasini olish",
+        tags=["simcard"],
+        responses={200: SimCardRequestSerializer()},
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -300,16 +308,17 @@ from services.serializers import (
 
 
 # ===========================================================
-# 1️⃣ BEMOR O‘Z BUYURTMALARINI KO‘RISH (/orders/me)
+# BEMOR O'Z BUYURTMALARINI KO'RISH (/orders/me)
 # ===========================================================
 class OrdersMeView(APIView):
     """Bemor (patient) o‘zining buyurtmalarini ko‘rish uchun."""
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="🧍‍♀️ Bemorga tegishli buyurtmalar (visa, simcard, booking va h.k.)",
-        operation_description="Login bo‘lgan bemor faqat o‘ziga tegishli buyurtmalarni ko‘radi.",
-        responses={200: "Bemorning barcha buyurtmalari"}
+        operation_summary="Bemorga tegishli buyurtmalar",
+        operation_description="Login bo'lgan bemor o'ziga tegishli buyurtmalarni ko'radi",
+        responses={200: "Bemorning barcha buyurtmalari"},
+        tags=["orders"]
     )
     def get(self, request):
         user = request.user
@@ -347,30 +356,20 @@ class OrdersMeView(APIView):
 
 
 # ===========================================================
-# 2️⃣ ADMIN / OPERATOR / PARTNER uchun ORDERLAR (/orders/)
+# ADMIN / OPERATOR / PARTNER uchun ORDERLAR (/orders/)
 # ===========================================================
 class OrdersListView(APIView):
     """Operator, admin, superadmin yoki partner barcha buyurtmalarni ko‘rish uchun."""
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="📦 Barcha buyurtmalar ro‘yxati (admin/operator/partner)",
-        operation_description=(
-            "Admin, operator, superadmin yoki partner barcha bemorlarning buyurtmalarini ko‘ra oladi.\n\n"
-            "Query parametrlari:\n"
-            "- **patient_id**: faqat shu bemorning buyurtmalarini ko‘rsatadi\n\n"
-            "**Misol:** `/orders/?patient_id=3` → Bemor ID=3 ning barcha buyurtmalari"
-        ),
+        operation_summary="Barcha buyurtmalar ro'yxati",
+        operation_description="Admin, operator, partner barcha buyurtmalarni ko'ra oladi",
         manual_parameters=[
-            openapi.Parameter(
-                "patient_id",
-                openapi.IN_QUERY,
-                description="Bemor ID (shu bemorning buyurtmalarini ko‘rish uchun)",
-                type=openapi.TYPE_INTEGER,
-                required=False
-            )
+            openapi.Parameter("patient_id", openapi.IN_QUERY, description="Bemor ID", type=openapi.TYPE_INTEGER, required=False)
         ],
-        responses={200: "Barcha buyurtmalar (visa, simcard, booking va h.k.)"}
+        responses={200: "Barcha buyurtmalar"},
+        tags=["orders"]
     )
     def get(self, request):
         user = request.user
@@ -419,19 +418,17 @@ class OrdersListView(APIView):
 
 
 # ===========================================================
-# 3️⃣ Bitta bemorning ORDERLARI (/orders/{id}/)
+# Bitta bemorning ORDERLARI (/orders/{id}/)
 # ===========================================================
 class PatientOrdersDetailView(APIView):
     """Bitta bemorning barcha buyurtmalarini olish (id bo‘yicha)."""
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="👤 Bemor buyurtmalari (ID orqali)",
-        operation_description=(
-            "Bitta bemorning barcha buyurtmalari (visa, booking, simcard, transfer, translator) qaytariladi.\n\n"
-            "**Misol:** `/orders/5/` → Bemor ID=5 ning barcha buyurtmalari"
-        ),
-        responses={200: "Bemorning barcha buyurtmalari"}
+        operation_summary="Bemor buyurtmalari",
+        operation_description="Bitta bemorning barcha buyurtmalari ID orqali",
+        responses={200: "Bemorning barcha buyurtmalari"},
+        tags=["orders"]
     )
     def get(self, request, id):
         user = request.user
