@@ -10,7 +10,7 @@ from .views import (
     RegisterView,
     LoginView,
     MedicalFileListView,
-    MedicalFileUploadView, OperatorLoginView, OperatorTokenRefreshView, PartnerLoginView, PartnerTokenRefreshView,
+    MedicalFileUploadView, OperatorLoginView, OperatorTokenRefreshView, OperatorProfileView, PartnerLoginView, PartnerTokenRefreshView,
 )
 
 router = DefaultRouter()
@@ -19,6 +19,7 @@ router.register(r'users', UserViewSet, basename='user')
 urlpatterns = [
     path("auth/operator/login/", OperatorLoginView.as_view(), name="operator_login"),
     path("auth/operator/refresh/", OperatorTokenRefreshView.as_view(), name="operator_refresh"),
+    path("auth/operator/profile/", OperatorProfileView.as_view(), name="operator_profile"),
 
     path('partner/login/', PartnerLoginView.as_view(), name='partner-login'),
     path('partner/refresh/', PartnerTokenRefreshView.as_view(), name='partner-refresh'),
