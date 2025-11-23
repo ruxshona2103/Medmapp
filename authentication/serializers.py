@@ -364,6 +364,38 @@ class OperatorLoginSerializer(TokenObtainPairSerializer):
 # --------------------------------------------PARTNER PANEL-------------------------------------------------------------
 
 
+class OperatorProfileSerializer(serializers.ModelSerializer):
+    phone_number = serializers.CharField(source='user.phone_number', read_only=True)
+    role = serializers.CharField(source='user.role', read_only=True)
+
+    class Meta:
+        from authentication.models import OperatorProfile
+        model = OperatorProfile
+        fields = [
+            'id',
+            'phone_number',
+            'role',
+            'full_name',
+            'employee_id',
+            'department',
+            'phone',
+            'email',
+            'is_active',
+            'total_patients_processed',
+            'total_applications_processed',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'employee_id',
+            'total_patients_processed',
+            'total_applications_processed',
+            'created_at',
+            'updated_at',
+        ]
+
+
 class PartnerLoginSerializer(TokenObtainPairSerializer):
     """
     Partner login - oddiy versiya
