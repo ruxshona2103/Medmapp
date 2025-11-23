@@ -24,7 +24,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
             qs = qs.filter(is_approved=True)
         return qs
 
-    @swagger_auto_schema(operation_summary="Tasdiqlangan fikrlar ro'yxati")
+    @swagger_auto_schema(operation_summary="Tasdiqlangan fikrlar ro'yxati", operation_description="Tasdiqlangan sharhlar ro'yxati", tags=["reviews"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
@@ -39,6 +39,6 @@ class BlogPostViewSet(viewsets.ModelViewSet):
             return [permissions.AllowAny()]
         return [permissions.IsAdminUser()]
 
-    @swagger_auto_schema(operation_summary="Blog maqolalari ro‘yxati (3 tilda)")
+    @swagger_auto_schema(operation_summary="Blog maqolalari ro'yxati", operation_description="Blog maqolalari 3 tilda", tags=["blog"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
