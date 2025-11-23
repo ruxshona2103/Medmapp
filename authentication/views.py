@@ -22,6 +22,7 @@ from .serializers import (
     LoginSerializer,
     MedicalFileSerializer,
     OperatorLoginSerializer, PartnerLoginSerializer,
+    OperatorProfileSerializer,
 )
 
 # 👉 OTP tasdiqlanganda avtomatik Patient yaratish uchun
@@ -35,8 +36,10 @@ class RegisterView(APIView):
     permission_classes = [AllowAny]
 
     @swagger_auto_schema(
-        operation_description="Ro‘yxatdan o‘tish (pending user yaratiladi).",
-        request_body=RegisterSerializer
+        operation_summary="Ro'yxatdan o'tish",
+        operation_description="Yangi foydalanuvchi yaratish (pending user)",
+        request_body=RegisterSerializer,
+        tags=["auth"]
     )
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -55,8 +58,10 @@ class OtpRequestView(APIView):
     permission_classes = [AllowAny]
 
     @swagger_auto_schema(
-        operation_description="Ko‘rsatilgan telefon raqamiga OTP jo‘natish.",
-        request_body=OtpRequestSerializer
+        operation_summary="OTP so'rash",
+        operation_description="Telefon raqamiga OTP kod yuborish",
+        request_body=OtpRequestSerializer,
+        tags=["auth"]
     )
     def post(self, request):
         serializer = OtpRequestSerializer(data=request.data)
@@ -113,13 +118,11 @@ class OtpVerifyView(APIView):
     permission_classes = [AllowAny]
 
     @swagger_auto_schema(
-        operation_description=(
-            "OTP ni tasdiqlaydi. Muvaffaqiyatda JWT tokenlarni qaytaradi. "
-            "Foydalanuvchi roli 'patient' bo‘lsa (yoki rol yo‘q bo‘lsa), Patient avtomatik yaratiladi "
-            "va birlamchi bosqich (Yangi) hamda default tag biriktiriladi."
-        ),
+        operation_summary="OTP tasdiqlash",
+        operation_description="OTP kodni tekshirish va JWT token olish",
         request_body=OtpVerifySerializer,
         responses={200: "OTP tasdiqlandi va token qaytarildi"},
+        tags=["auth"]
     )
     def post(self, request):
         serializer = OtpVerifySerializer(data=request.data)
@@ -189,9 +192,11 @@ class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     @swagger_auto_schema(
-        operation_description="Login (telefon raqam/parol yoki berilgan credential) va JWT tokenlar qaytarish.",
+        operation_summary="Login",
+        operation_description="Telefon raqam va OTP kod bilan kirish",
         request_body=LoginSerializer,
-        responses={200: "Kirish muvaffaqiyatli, JWT tokenlar qaytariladi"},
+        responses={200: "JWT tokenlar qaytarildi"},
+        tags=["auth"]
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -226,9 +231,11 @@ class MedicalFileUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Foydalanuvchiga tibbiy fayl yuklash.",
+        operation_summary="Tibbiy fayl yuklash",
+        operation_description="Foydalanuvchiga tibbiy fayl biriktirish",
         request_body=MedicalFileSerializer,
         responses={201: "Fayl yuklandi"},
+        tags=["auth"]
     )
     def post(self, request, pk=None):
         serializer = MedicalFileSerializer(data=request.data)
@@ -260,12 +267,59 @@ class OperatorLoginView(TokenObtainPairView):
     """
     serializer_class = OperatorLoginSerializer
 
+    @swagger_auto_schema(operation_summary="Operator login", operation_description="Operator telefon va parol bilan kirish", tags=["operator"])
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
 
 class OperatorTokenRefreshView(TokenRefreshView):
     """
     Refresh token orqali yangi access token olish.
     """
-    pass
+
+    @swagger_auto_schema(operation_summary="Operator token yangilash", operation_description="Refresh token bilan yangi access token olish", tags=["operator"])
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
+
+class OperatorProfileView(generics.RetrieveUpdateAPIView):
+    """
+    Operator profili
+    GET /api/auth/operator/profile/
+    PUT /api/auth/operator/profile/
+    PATCH /api/auth/operator/profile/
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = OperatorProfileSerializer
+
+    def get_object(self):
+        from authentication.models import OperatorProfile
+        user = self.request.user
+        user_role = getattr(user, 'role', None)
+        if user_role != 'operator':
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Faqat operatorlar kirishi mumkin.")
+        profile, created = OperatorProfile.objects.get_or_create(
+            user=user,
+            defaults={
+                'full_name': user.first_name or getattr(user, 'phone_number', '') or f'Operator_{user.id}',
+                'employee_id': f'OP_{user.id}',
+                'phone': getattr(user, 'phone_number', None),
+            }
+        )
+        return profile
+
+    @swagger_auto_schema(operation_summary="Operator profili", operation_description="Operator profil ma'lumotlarini olish", tags=["operator"])
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Profilni to'liq yangilash", operation_description="Operator profilini to'liq yangilash", tags=["operator"])
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
+
+    @swagger_auto_schema(operation_summary="Profilni qisman yangilash", operation_description="Operator profilini qisman yangilash", tags=["operator"])
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
 
 
 # ===============================================================
@@ -279,91 +333,36 @@ class PartnerLoginView(TokenObtainPairView):
     permission_classes = [AllowAny]
 
     @swagger_auto_schema(
-        operation_summary="🔐 Partner Login",
-        operation_description="""
-        Hamkor uchun login endpoint.
-
-        Credentials:
-        - phone_number: +998XXXXXXXXX
-        - password: partner paroli
-
-        Returns:
-        - access: Access token (15 daqiqa)
-        - refresh: Refresh token (1 kun)
-        - user: Partner ma'lumotlari
-        """,
+        operation_summary="Partner login",
+        operation_description="Hamkor uchun telefon va parol bilan kirish",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['phone_number', 'password'],
             properties={
-                'phone_number': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Telefon raqam',
-                    example='+998999999996'
-                ),
-                'password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Parol',
-                    example='partner123'
-                ),
+                'phone_number': openapi.Schema(type=openapi.TYPE_STRING, description='Telefon raqam'),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, description='Parol'),
             },
         ),
-        responses={
-            200: openapi.Response(
-                description='Login muvaffaqiyatli',
-                examples={
-                    'application/json': {
-                        'access': 'eyJ0eXAiOiJKV1QiLCJhbGc...',
-                        'refresh': 'eyJ0eXAiOiJKV1QiLCJhbGc...',
-                        'user': {
-                            'id': 5,
-                            'phone_number': '+998999999996',
-                            'role': 'partner',
-                            'first_name': 'Test',
-                            'last_name': 'Partner',
-                            'partner_id': 1,
-                            'partner_name': 'Test Klinika',
-                            'partner_code': 'TEST_001'
-                        }
-                    }
-                }
-            ),
-            401: 'Noto\'g\'ri credentials yoki role',
-        },
-        tags=['auth']  # ← BITTA TAG!
+        responses={200: "JWT tokenlar qaytarildi", 401: "Noto'g'ri credentials"},
+        tags=['partner']
     )
     def post(self, request, *args, **kwargs):
-        """Partner login"""
         return super().post(request, *args, **kwargs)
 
 
 class PartnerTokenRefreshView(TokenRefreshView):
     @swagger_auto_schema(
-        operation_summary="🔄 Partner Token Refresh",
+        operation_summary="Partner token yangilash",
         operation_description="Refresh token orqali yangi access token olish",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=['refresh'],
             properties={
-                'refresh': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Refresh token'
-                ),
+                'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh token'),
             }
         ),
-        responses={
-            200: openapi.Response(
-                'Success',
-                openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'access': openapi.Schema(type=openapi.TYPE_STRING),
-                    }
-                )
-            )
-        },
-        tags=['auth']
+        responses={200: "Yangi access token"},
+        tags=['partner']
     )
     def post(self, request, *args, **kwargs):
-        """Token refresh"""
         return super().post(request, *args, **kwargs)
