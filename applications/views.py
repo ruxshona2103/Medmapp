@@ -66,28 +66,15 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         return qs.prefetch_related("documents")
 
     @swagger_auto_schema(
-        operation_summary="📋 Arizalar ro'yxati (filter + pagination)",
-        operation_description=(
-                "Arizalarni holati yoki sana bo'yicha filtrlash mumkin. "
-                "`status` (new, in_progress, completed, rejected), "
-                "`date` formati: YYYY-MM-DD, "
-                "`patient_id` bemor ID bo'yicha filter. "
-                "Pagination: 10 items per page (page, page_size params)"
-        ),
+        operation_summary="Arizalar ro'yxati",
+        operation_description="Arizalarni filter va pagination bilan olish",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Klinika yoki bemor nomi bo'yicha qidirish"),
-            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              enum=["all", "new", "in_progress", "completed", "rejected"],
-                              description="Ariza holati bo'yicha filter"),
-            openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Aynan shu sanada yaratilgan (YYYY-MM-DD)"),
-            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Bemor ID bo'yicha filter"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifa raqami"),
-            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifadagi elementlar soni (max 100)"),
+            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Qidirish"),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING, enum=["all", "new", "in_progress", "completed", "rejected"], description="Status filter"),
+            openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Sana (YYYY-MM-DD)"),
+            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Bemor ID"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
+            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Elementlar soni"),
         ],
         responses={200: ApplicationSerializer(many=True)},
         tags=["applications"]
@@ -169,15 +156,12 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return context
 
     @swagger_auto_schema(
-        operation_summary="👤 Bemorning arizalari",
-        operation_description="Bemor ID bo'yicha barcha arizalar (pagination bilan)",
+        operation_summary="Bemorning arizalari",
+        operation_description="Bemor ID bo'yicha barcha arizalar",
         manual_parameters=[
-            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Status filter (new, in_progress, completed, rejected, all)"),
-            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifa raqami"),
-            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
-                              description="Sahifadagi elementlar soni (max 100)"),
+            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Status filter"),
+            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
+            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Elementlar soni"),
         ],
         responses={200: ApplicationSerializer(many=True)},
         tags=["patient-applications"]
@@ -237,13 +221,12 @@ class UploadApplicationDocumentView(generics.CreateAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(
-        operation_summary="📄 Arizaga hujjat yuklash",
+        operation_summary="Arizaga hujjat yuklash",
+        operation_description="Arizaga fayl biriktirish",
         consumes=["multipart/form-data"],
         manual_parameters=[
-            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True,
-                              description="Yuklanadigan fayl (PDF/JPG/PNG)"),
-            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING,
-                              description="Fayl tavsifi (ixtiyoriy)")
+            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description="Fayl"),
+            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING, description="Tavsif")
         ],
         responses={201: DocumentSerializer},
         tags=["applications"],
@@ -259,7 +242,7 @@ class UploadApplicationDocumentView(generics.CreateAPIView):
             ApplicationHistory.objects.create(
                 application=application,
                 author=request.user,
-                comment="📄 Hujjat yuklandi"
+                comment="Hujjat yuklandi"
             )
         except:
             pass
@@ -287,22 +270,21 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         return Document.objects.filter(application_id=application_id).order_by('-uploaded_at')
 
     @swagger_auto_schema(
-        operation_summary="📄 Arizaning hujjatlari ro'yxati",
+        operation_summary="Arizaning hujjatlari ro'yxati",
+        operation_description="Arizaga biriktirilgan hujjatlar",
         responses={200: DocumentSerializer(many=True)},
         tags=["applications"]
     )
     def get(self, request, *args, **kwargs):
-        """Hujjatlar ro'yxati"""
         return super().get(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="📄 Arizaga hujjat yuklash",
+        operation_summary="Arizaga hujjat yuklash",
+        operation_description="Yangi hujjat biriktirish",
         consumes=["multipart/form-data"],
         manual_parameters=[
-            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True,
-                              description="Fayl (PDF/JPG/PNG)"),
-            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING,
-                              description="Tavsif")
+            openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description="Fayl"),
+            openapi.Parameter("description", openapi.IN_FORM, type=openapi.TYPE_STRING, description="Tavsif")
         ],
         responses={201: DocumentSerializer},
         tags=["applications"]
@@ -336,17 +318,17 @@ class ChangeApplicationStageView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="🔁 Bosqichni o'zgartirish",
-        operation_description="Yangi Stage ID va izoh yuboriladi",
+        operation_summary="Bosqichni o'zgartirish",
+        operation_description="Ariza bosqichini yangilash",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["new_stage_id"],
             properties={
-                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING),
+                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi bosqich ID"),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh"),
             },
         ),
-        responses={200: openapi.Response("Bosqich o'zgartirildi")},
+        responses={200: "Bosqich o'zgartirildi"},
         tags=["applications"],
     )
     def patch(self, request, application_id):
@@ -421,18 +403,15 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return qs.order_by("-created_at")
 
     @swagger_auto_schema(
-        operation_summary="🧾 Tugatilgan/rad etilgan arizalar",
-        operation_description="Operator paneli uchun",
+        operation_summary="Tugatilgan arizalar",
+        operation_description="Tugatilgan yoki rad etilgan arizalar",
         manual_parameters=[
-            openapi.Parameter("search", openapi.IN_QUERY, description="Bemor/klinika bo'yicha",
-                              type=openapi.TYPE_STRING),
-            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              enum=["all", "completed", "rejected"]),
-            openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING,
-                              description="Sana (YYYY-MM-DD)"),
-            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
-            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
+            openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Qidirish"),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING, enum=["all", "completed", "rejected"], description="Status"),
+            openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Sana"),
+            openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Bemor ID"),
+            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
+            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Elementlar soni"),
         ],
         responses={200: CompletedApplicationSerializer(many=True)},
         tags=["applications"],
@@ -449,7 +428,8 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_summary="📄 Bitta tugatilgan ariza",
+        operation_summary="Bitta tugatilgan ariza",
+        operation_description="Tugatilgan ariza tafsilotlari",
         responses={200: CompletedApplicationSerializer()},
         tags=["applications"],
     )
@@ -472,16 +452,17 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="🧾 Status o'zgartirish (completed/rejected)",
+        operation_summary="Status o'zgartirish",
+        operation_description="Ariza statusini completed yoki rejected ga o'zgartirish",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["status"],
             properties={
-                "status": openapi.Schema(type=openapi.TYPE_STRING, enum=["completed", "rejected"]),
-                "final_conclusion": openapi.Schema(type=openapi.TYPE_STRING),
+                "status": openapi.Schema(type=openapi.TYPE_STRING, enum=["completed", "rejected"], description="Yangi status"),
+                "final_conclusion": openapi.Schema(type=openapi.TYPE_STRING, description="Yakuniy xulosa"),
             },
         ),
-        responses={200: openapi.Response("Status o'zgartirildi")},
+        responses={200: "Status o'zgartirildi"},
         tags=["applications"],
     )
     def patch(self, request, *args, **kwargs):
@@ -514,30 +495,9 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
 # ===============================================================
 @swagger_auto_schema(
     method='get',
-    operation_summary="📊 Arizalar statistikasi",
-    operation_description="""
-    ✅ YANGI API - Operator uchun:
-    - Jami arizalar
-    - Yangi arizalar
-    - Jarayondagi arizalar
-    - Yakunlangan arizalar
-    - Rad etilgan arizalar
-    """,
-    responses={
-        200: openapi.Response(
-            'Success',
-            openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    'jami': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'yangi': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'jarayonda': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'yakunlangan': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'rad_etilgan': openapi.Schema(type=openapi.TYPE_INTEGER),
-                }
-            )
-        )
-    },
+    operation_summary="Arizalar statistikasi",
+    operation_description="Arizalar soni status bo'yicha",
+    responses={200: "Statistika ma'lumotlari"},
     tags=["statistics"]
 )
 @api_view(['GET'])
