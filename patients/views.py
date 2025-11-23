@@ -106,8 +106,8 @@ class PatientViewSet(viewsets.ModelViewSet):
     # 📋 LIST
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="👤 Barcha bemorlar ro'yxati (Kanban board uchun)",
-        operation_description="Bemorlar ro'yxati - minimal ma'lumotlar (id, ism, telefon, stage_id, tag_id).",
+        operation_summary="Bemorlar ro'yxati",
+        operation_description="Bemorlar ro'yxati - filter va pagination bilan",
         manual_parameters=[
             openapi.Parameter('patient_id', openapi.IN_QUERY, type=openapi.TYPE_INTEGER),
             openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING),
@@ -134,7 +134,8 @@ class PatientViewSet(viewsets.ModelViewSet):
     # ➕ CREATE
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="👤 Yangi bemor yaratish",
+        operation_summary="Yangi bemor yaratish",
+        operation_description="Yangi bemor ma'lumotlarini kiritish",
         request_body=PatientCreateUpdateSerializer,
         responses={201: PatientCreateUpdateSerializer()},
         tags=["patients"]
@@ -150,8 +151,8 @@ class PatientViewSet(viewsets.ModelViewSet):
     # 👤 PROFILE (AVATAR bilan)
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="👤 Bemor profili (avatar bilan)",
-        operation_description="Bemorning profil ma'lumotlari (avatar URL to‘liq chiqadi)",
+        operation_summary="Bemor profili",
+        operation_description="Bemorning profil ma'lumotlari avatar bilan",
         responses={200: PatientProfileSerializer()},
         tags=["patients"]
     )
@@ -198,7 +199,7 @@ class PatientDocumentViewSet(viewsets.ModelViewSet):
         return context
 
     @swagger_auto_schema(
-        operation_summary="📎 Bemor hujjatlari ro'yxati",
+        operation_summary="Bemor hujjatlari ro'yxati",
         operation_description="Bemorning barcha yuklangan hujjatlari",
         responses={200: PatientDocumentSerializer(many=True)},
         tags=["patient-documents"]
@@ -210,8 +211,8 @@ class PatientDocumentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
-        operation_summary="📎 Hujjat yuklash",
-        operation_description="Bemor uchun yangi hujjat yuklash (PDF, JPG, PNG, DOCX)",
+        operation_summary="Hujjat yuklash",
+        operation_description="Bemor uchun yangi hujjat yuklash",
         request_body=PatientDocumentSerializer,
         responses={201: PatientDocumentSerializer()},
         tags=["patient-documents"]
@@ -233,7 +234,7 @@ class PatientDocumentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @swagger_auto_schema(
-        operation_summary="📎 Hujjatni o'chirish",
+        operation_summary="Hujjatni o'chirish",
         operation_description="Bemorning hujjatini o'chirish",
         responses={204: "Hujjat muvaffaqiyatli o'chirildi"},
         tags=["patient-documents"]
@@ -287,7 +288,7 @@ class ResponseLettersViewSet(viewsets.ReadOnlyModelViewSet):
         return context
 
     @swagger_auto_schema(
-        operation_summary="📧 Javob xatlari ro'yxati",
+        operation_summary="Javob xatlari ro'yxati",
         operation_description="Bemorga yuborilgan barcha javob xatlari",
         responses={200: PatientDocumentSerializer(many=True)},
         tags=["response-letters"]
@@ -310,7 +311,7 @@ class ContractApproveViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="📝 Bemor shartnomalarini olish",
+        operation_summary="Bemor shartnomalarini olish",
         operation_description="Bemorning barcha shartnomalarini ko'rish",
         responses={200: openapi.Response("Shartnomalar ro'yxati")},
         tags=["contracts"]
@@ -338,12 +339,12 @@ class ContractApproveViewSet(viewsets.ViewSet):
             )
 
     @swagger_auto_schema(
-        operation_summary="📝 Shartnomani tasdiqlash",
+        operation_summary="Shartnomani tasdiqlash",
         operation_description="Bemor shartnomani tasdiqlaydi",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                'is_approved': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Tasdiqlash (true/false)"),
+                'is_approved': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Tasdiqlash"),
             }
         ),
         responses={200: openapi.Response("Shartnoma tasdiqlandi")},
@@ -424,12 +425,9 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
         return context
 
     @swagger_auto_schema(
-        operation_summary=" Mening profilim",
-        responses={
-            200: PatientProfileSerializer(),
-            401: "Autentifikatsiya xatosi (JWT token yo'q yoki yaroqsiz)",
-            404: "Profil topilmadi"
-        },
+        operation_summary="Mening profilim",
+        operation_description="Joriy foydalanuvchi profilini olish",
+        responses={200: PatientProfileSerializer(), 404: "Profil topilmadi"},
         tags=["me-profile"]
     )
     def get(self, request, *args, **kwargs):
@@ -450,20 +448,9 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Profilni qisman yangilash",
-        operation_description="""
-        Profil ma'lumotlarini qisman yangilash (PATCH).
-
-        Agar profil yo'q bo'lsa - yangi profil yaratadi.
-
-        Faqat yuborilgan fieldlar yangilanadi.
-        """,
+        operation_description="Faqat yuborilgan fieldlar yangilanadi",
         request_body=PatientProfileSerializer,
-        responses={
-            200: PatientProfileSerializer(),
-            201: "Yangi profil yaratildi",
-            400: "Validation xatosi",
-            401: "JWT token xatosi"
-        },
+        responses={200: PatientProfileSerializer(), 201: "Yangi profil yaratildi"},
         tags=["me-profile"]
     )
     def patch(self, request, *args, **kwargs):
@@ -494,13 +481,9 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Profilni to'liq yangilash",
+        operation_description="Barcha profil ma'lumotlarini yangilash",
         request_body=PatientProfileSerializer,
-        responses={
-            200: PatientProfileSerializer(),
-            201: "Yangi profil yaratildi",
-            400: "Validation xatosi",
-            401: "JWT token xatosi"
-        },
+        responses={200: PatientProfileSerializer(), 201: "Yangi profil yaratildi"},
         tags=["me-profile"]
     )
     def put(self, request, *args, **kwargs):
@@ -555,30 +538,9 @@ class MeProfileView(generics.RetrieveUpdateAPIView):
 
 @swagger_auto_schema(
     method='get',
-    operation_summary="📊 Bemorlar statistikasi",
-    operation_description="""
-    ✅ Operator uchun statistika:
-    - Jami bemorlar
-    - Yangi bemorlar (oxirgi 7 kun)
-    - Faol bemorlar (arizalari bor)
-    - Erkak bemorlar
-    - Ayol bemorlar
-    """,
-    responses={
-        200: openapi.Response(
-            'Success',
-            openapi.Schema(
-                type=openapi.TYPE_OBJECT,
-                properties={
-                    'jami_bemorlar': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'yangi_bemorlar': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'faol_bemorlar': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'erkak': openapi.Schema(type=openapi.TYPE_INTEGER),
-                    'ayol': openapi.Schema(type=openapi.TYPE_INTEGER),
-                }
-            )
-        )
-    },
+    operation_summary="Bemorlar statistikasi",
+    operation_description="Jami, yangi, faol bemorlar va jins bo'yicha statistika",
+    responses={200: "Statistika ma'lumotlari"},
     tags=["statistics"]
 )
 
@@ -648,23 +610,12 @@ class PatientResponseListView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_summary="📎 Bemorga yuborilgan fayllar (javob xatlari)",
-        operation_description="""
-        Faqat bemor o‘ziga tegishli barcha fayllarni ko‘radi.
-
-        Query params:
-        - `source` = kim yuklagani (`operator`, `partner`, `patient`)
-        Agar parametr berilmasa — faqat `operator` fayllarini qaytaradi.
-        """,
+        operation_summary="Bemorga yuborilgan fayllar",
+        operation_description="Bemor o'ziga tegishli javob xatlarini ko'radi",
         manual_parameters=[
-            openapi.Parameter(
-                'source',
-                openapi.IN_QUERY,
-                description="Fayl manbasiga qarab filtr (operator, partner, patient)",
-                type=openapi.TYPE_STRING,
-            ),
+            openapi.Parameter('source', openapi.IN_QUERY, description="Fayl manbasi (operator, partner, patient)", type=openapi.TYPE_STRING),
         ],
-        responses={200: "Bemor hujjatlar ro‘yxati"},
+        responses={200: "Hujjatlar ro'yxati"},
         tags=["responses-patient"]
     )
     def get(self, request):
