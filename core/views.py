@@ -50,8 +50,8 @@ class StageViewSet(viewsets.ModelViewSet):
     # 📋 Barcha bosqichlarni olish
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="📋 Barcha bosqichlar ro‘yxati",
-        operation_description="Bosqichlar ro‘yxatini `order` yoki `id` bo‘yicha tartiblangan holda qaytaradi.",
+        operation_summary="Barcha bosqichlar ro'yxati",
+        operation_description="Bosqichlar ro'yxatini order bo'yicha tartiblangan holda qaytaradi",
         tags=["stages"]
     )
     def list(self, request, *args, **kwargs):
@@ -61,8 +61,8 @@ class StageViewSet(viewsets.ModelViewSet):
     # ➕ Yangi bosqich yaratish
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="➕ Yangi bosqich yaratish",
-        operation_description="Yangi bosqich qo‘shish (faqat operator yoki admin uchun).",
+        operation_summary="Yangi bosqich yaratish",
+        operation_description="Yangi bosqich qo'shish",
         tags=["stages"]
     )
     def create(self, request, *args, **kwargs):
@@ -72,8 +72,8 @@ class StageViewSet(viewsets.ModelViewSet):
     # ✏️ Bosqich ma’lumotlarini yangilash (PATCH)
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="✏️ Bosqich ma’lumotlarini tahrirlash (PATCH)",
-        operation_description="Bosqich nomi, rangi yoki boshqa atributlarini qisman yangilash imkonini beradi.",
+        operation_summary="Bosqichni tahrirlash",
+        operation_description="Bosqich nomi, rangi yoki boshqa atributlarini qisman yangilash",
         tags=["stages"]
     )
     def partial_update(self, request, *args, **kwargs):
@@ -83,8 +83,8 @@ class StageViewSet(viewsets.ModelViewSet):
     # 🗑️ Bosqichni o‘chirish
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="🗑️ Bosqichni o‘chirish",
-        operation_description="Faqat operator yoki admin foydalanuvchi o‘chira oladi. ‘Yangi’ bosqichni o‘chirib bo‘lmaydi.",
+        operation_summary="Bosqichni o'chirish",
+        operation_description="Yangi bosqichni o'chirib bo'lmaydi",
         tags=["stages"]
     )
     def destroy(self, request, *args, **kwargs):
@@ -100,27 +100,16 @@ class StageViewSet(viewsets.ModelViewSet):
     # 🔢 Bosqichlarni qayta tartiblash (ordering)
     # ===========================================================
     @swagger_auto_schema(
-        operation_summary="🔢 Bosqichlarni qayta tartiblash",
-        operation_description=(
-            "Frontenddagi drag-drop orqali yuborilgan tartib asosida `order` qiymatlarini yangilaydi.\n\n"
-            "**Body misol:**\n"
-            "```\n"
-            "{ \"order\": [3, 1, 5, 2] }\n"
-            "```\n"
-            "Bu holatda 3-id birinchi, 1-id ikkinchi, 5-id uchinchi bo‘lib tartiblanadi."
-        ),
+        operation_summary="Bosqichlarni qayta tartiblash",
+        operation_description="Drag-drop orqali tartibni yangilash",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                "order": openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Items(type=openapi.TYPE_INTEGER),
-                    description="Bosqich ID’lari yangi tartibda"
-                ),
+                "order": openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER), description="Bosqich ID'lari yangi tartibda"),
             },
             required=["order"],
         ),
-        responses={200: "Tartib muvaffaqiyatli yangilandi"},
+        responses={200: "Tartib yangilandi"},
         tags=["stages"],
     )
     @action(detail=False, methods=["post"], url_path="reorder")
@@ -143,29 +132,18 @@ class StageViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         method="post",
-        operation_summary="🔄 Patient stage’ini o‘zgartirish",
-        operation_description=(
-                "Bir vaqtning o'zida patient_id, stage_id va comment yuboriladi.\n\n"
-                "**Request body:**\n"
-                "```\n"
-                "{\n"
-                "   \"patient_id\": 12,\n"
-                "   \"stage_id\": 3,\n"
-                "   \"comment\": \"Hujjatlar tayyor\"\n"
-                "}\n"
-                "```\n"
-                "✅ Faqat authenticated userlar ishlata oladi."
-        ),
+        operation_summary="Patient bosqichini o'zgartirish",
+        operation_description="Bemor bosqichini yangilash",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["patient_id", "stage_id"],
             properties={
-                "patient_id": openapi.Schema(type=openapi.TYPE_INTEGER),
-                "stage_id": openapi.Schema(type=openapi.TYPE_INTEGER),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING),
+                "patient_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Bemor ID"),
+                "stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi bosqich ID"),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh"),
             },
         ),
-        responses={200: "Stage muvaffaqiyatli o‘zgartirildi"},
+        responses={200: "Stage o'zgartirildi"},
         tags=["stages"],
     )
     @action(detail=False, methods=["post"], url_path="change-stage")
@@ -229,40 +207,40 @@ class TagViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "put", "patch", "delete"]
 
     @swagger_auto_schema(
-        operation_summary="🏷️ Barcha teglar ro‘yxatini olish",
-        operation_description="Barcha mavjud teglarni olish (faqat operator yoki admin uchun).",
+        operation_summary="Barcha teglar ro'yxati",
+        operation_description="Barcha mavjud teglarni olish",
         tags=["tags"]
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="➕ Yangi teg yaratish",
-        operation_description="Yangi teg yaratish (faqat operator yoki admin uchun).",
+        operation_summary="Yangi teg yaratish",
+        operation_description="Yangi teg qo'shish",
         tags=["tags"]
     )
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="✏️ Tegni yangilash (PUT)",
-        operation_description="Tegni to‘liq yangilash (PUT metodi).",
+        operation_summary="Tegni yangilash",
+        operation_description="Tegni to'liq yangilash",
         tags=["tags"]
     )
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="🖋️ Tegni qisman yangilash (PATCH)",
-        operation_description="Tegni faqat bitta yoki bir nechta maydonlarini yangilash.",
+        operation_summary="Tegni qisman yangilash",
+        operation_description="Tegni qisman yangilash",
         tags=["tags"]
     )
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="🗑️ Tegni o‘chirish",
-        operation_description="Tegni ID bo‘yicha o‘chirish.",
+        operation_summary="Tegni o'chirish",
+        operation_description="Tegni ID bo'yicha o'chirish",
         tags=["tags"]
     )
     def destroy(self, request, *args, **kwargs):
