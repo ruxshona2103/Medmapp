@@ -307,6 +307,7 @@ class PartnerProfileSerializer(serializers.ModelSerializer):
     """
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.EmailField(source='user.email', read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Partner
@@ -315,6 +316,8 @@ class PartnerProfileSerializer(serializers.ModelSerializer):
             'username',
             'email',
             'name',
+            'avatar',
+            'avatar_url',
             'code',
             'specialization',
             'contact_person',
@@ -329,5 +332,18 @@ class PartnerProfileSerializer(serializers.ModelSerializer):
             'total_patients',
             'active_patients',
             'created_at',
+            'avatar_url',
         ]
+        extra_kwargs = {
+            'avatar': {'write_only': True},
+        }
+
+    def get_avatar_url(self, obj):
+        """Avatar URL qaytarish"""
+        if obj.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
 

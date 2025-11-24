@@ -33,6 +33,13 @@ class Partner(models.Model):
         help_text='Masalan: "Medion Klinika" yoki "Dr. Aliyev"'
     )
 
+    avatar = models.ImageField(
+        upload_to='partner_avatars/',
+        blank=True,
+        null=True,
+        verbose_name='Profil rasmi'
+    )
+
     code = models.CharField(
         max_length=50,
         unique=True,

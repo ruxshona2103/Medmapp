@@ -54,6 +54,7 @@ LOCALE_PATHS = [BASE_DIR / "locale"]
 # INSTALLED APPS
 # ===============================================================
 INSTALLED_APPS = [
+    "daphne",  # WebSocket server - BIRINCHI bo'lishi kerak!
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -61,6 +62,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
+    "channels",  # Django Channels
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
@@ -115,6 +117,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 # ===============================================================
 # AUTH USER
@@ -266,3 +269,30 @@ LOGGING = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ===============================================================
+# DJANGO CHANNELS (WebSocket)
+# ===============================================================
+# Redis URL for channel layer (production)
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+# Channel Layers configuration
+if IS_PRODUCTION:
+    # Production: Redis backend
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
+else:
+    # Development: In-memory backend (Redis shart emas)
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }

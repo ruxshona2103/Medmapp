@@ -172,6 +172,12 @@ class OperatorProfile(models.Model):
         verbose_name='Foydalanuvchi'
     )
     full_name = models.CharField(max_length=255, verbose_name='To\'liq ism')
+    avatar = models.ImageField(
+        upload_to='operator_avatars/',
+        blank=True,
+        null=True,
+        verbose_name='Profil rasmi'
+    )
     employee_id = models.CharField(
         max_length=50,
         unique=True,

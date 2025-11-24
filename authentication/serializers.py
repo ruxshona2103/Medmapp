@@ -367,6 +367,7 @@ class OperatorLoginSerializer(TokenObtainPairSerializer):
 class OperatorProfileSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
     role = serializers.CharField(source='user.role', read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         from authentication.models import OperatorProfile
@@ -376,6 +377,8 @@ class OperatorProfileSerializer(serializers.ModelSerializer):
             'phone_number',
             'role',
             'full_name',
+            'avatar',
+            'avatar_url',
             'employee_id',
             'department',
             'phone',
@@ -393,7 +396,20 @@ class OperatorProfileSerializer(serializers.ModelSerializer):
             'total_applications_processed',
             'created_at',
             'updated_at',
+            'avatar_url',
         ]
+        extra_kwargs = {
+            'avatar': {'write_only': True},
+        }
+
+    def get_avatar_url(self, obj):
+        """Avatar URL qaytarish"""
+        if obj.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
 
 
 class PartnerLoginSerializer(TokenObtainPairSerializer):

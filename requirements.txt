@@ -63,3 +63,6 @@ wcwidth==0.2.14
 whitenoise==6.11.0
 zope.interface==8.0.1
 gunicorn
+channels>=4.0.0
+channels-redis>=4.1.0
+daphne>=4.0.0
