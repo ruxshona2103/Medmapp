@@ -1,7 +1,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, filters, generics, status
 from rest_framework.decorators import action
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.response import Response
@@ -128,6 +128,7 @@ class PartnerPatientViewSet(viewsets.ReadOnlyModelViewSet):
 class PartnerProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, IsPartnerUser]
     serializer_class = PartnerProfileSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self):
         from partners.models import Partner
