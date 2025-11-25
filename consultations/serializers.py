@@ -226,10 +226,11 @@ class MessageSerializer(serializers.ModelSerializer):
         )
 
         # ---- ATTACHMENTS ----
-        # Fayllar views.py'da to'g'ridan-to'g'ri Attachment modeliga yoziladi
-        # Bu yerda attachment yaratmaslik kerak chunki views.py buni qiladi
-        # Faqat xabar yuborish uchun MessageSerializer ishlatilsa, fayllar bo'lishi mumkin
-        files = request.FILES.getlist("attachments") or request.FILES.getlist("files")
+        # MUHIM: Fayllar views.py'da to'g'ridan-to'g'ri Attachment modeliga yoziladi
+        # Bu yerda attachment yaratish KERAK EMAS, chunki views.py buni qiladi.
+        # Agar bu yerda ham yaratilsa, fayllar ikki marta saqlanadi (duplicate)!
+        # Faqat oddiy /messages/ endpoint orqali fayl yuborilganda ishlaydi (attachments nomi bilan)
+        files = request.FILES.getlist("attachments")  # Faqat "attachments" nomini tekshiramiz
 
         if files:
             # Agar serializer to'g'ridan-to'g'ri ishlatilsa (POST /messages/)
