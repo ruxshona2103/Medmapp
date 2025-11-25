@@ -2,7 +2,7 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction, IntegrityError
 from drf_yasg import openapi
-from rest_framework import status, viewsets, filters, generics, permissions
+from rest_framework import status, viewsets, filters, generics, permissions, parsers
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -291,6 +291,7 @@ class OperatorProfileView(generics.RetrieveUpdateAPIView):
     """
     permission_classes = [IsAuthenticated]
     serializer_class = OperatorProfileSerializer
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_object(self):
         from authentication.models import OperatorProfile
