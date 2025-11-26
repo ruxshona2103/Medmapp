@@ -281,7 +281,6 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        # Operator/admin uchun - barcha responslarni ko'rish mumkin
         if hasattr(request.user, 'role') and request.user.role in ('operator', 'admin'):
             serializer = self.get_serializer(instance, context={"request": request})
             return Response(serializer.data, status=status.HTTP_200_OK)
