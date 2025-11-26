@@ -322,7 +322,36 @@ class OperatorProfileView(generics.RetrieveUpdateAPIView):
     @swagger_auto_schema(
         operation_summary="Profilni to'liq yangilash (Avatar bilan)",
         operation_description="Operator profilini to'liq yangilash. Avatar yuklash mumkin (multipart/form-data).",
-        request_body=OperatorProfileSerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'avatar': openapi.Schema(
+                    type=openapi.TYPE_FILE,
+                    description='Profil rasmi (PNG, JPG, JPEG)'
+                ),
+                'full_name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="To'liq ism"
+                ),
+                'department': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Bo'lim"
+                ),
+                'phone': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Telefon raqam'
+                ),
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_EMAIL,
+                    description='Email'
+                ),
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Faol yoki faol emas'
+                ),
+            }
+        ),
         responses={200: OperatorProfileSerializer()},
         tags=["operator"]
     )
@@ -332,7 +361,36 @@ class OperatorProfileView(generics.RetrieveUpdateAPIView):
     @swagger_auto_schema(
         operation_summary="Profilni qisman yangilash (Avatar bilan)",
         operation_description="Operator profilini qisman yangilash. Avatar yuklash mumkin (multipart/form-data).",
-        request_body=OperatorProfileSerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'avatar': openapi.Schema(
+                    type=openapi.TYPE_FILE,
+                    description='Profil rasmi (PNG, JPG, JPEG)'
+                ),
+                'full_name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="To'liq ism"
+                ),
+                'department': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Bo'lim"
+                ),
+                'phone': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Telefon raqam'
+                ),
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_EMAIL,
+                    description='Email'
+                ),
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Faol yoki faol emas'
+                ),
+            }
+        ),
         responses={200: OperatorProfileSerializer()},
         tags=["operator"]
     )

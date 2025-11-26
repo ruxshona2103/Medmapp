@@ -157,7 +157,35 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
     @swagger_auto_schema(
         operation_summary="Profilni to'liq yangilash (Avatar bilan)",
         operation_description="Hamkor profilini to'liq yangilash. Avatar yuklash mumkin (multipart/form-data).",
-        request_body=PartnerProfileSerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'avatar': openapi.Schema(
+                    type=openapi.TYPE_FILE,
+                    description='Profil rasmi (PNG, JPG, JPEG)'
+                ),
+                'name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Klinika/Shifokor nomi'
+                ),
+                'specialization': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Mutaxassislik'
+                ),
+                'contact_person': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Mas'ul shaxs"
+                ),
+                'phone': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Telefon raqam'
+                ),
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Faol yoki faol emas'
+                ),
+            }
+        ),
         responses={200: PartnerProfileSerializer()},
         tags=["partner"]
     )
@@ -167,7 +195,35 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
     @swagger_auto_schema(
         operation_summary="Profilni qisman yangilash (Avatar bilan)",
         operation_description="Hamkor profilini qisman yangilash. Avatar yuklash mumkin (multipart/form-data).",
-        request_body=PartnerProfileSerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'avatar': openapi.Schema(
+                    type=openapi.TYPE_FILE,
+                    description='Profil rasmi (PNG, JPG, JPEG)'
+                ),
+                'name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Klinika/Shifokor nomi'
+                ),
+                'specialization': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Mutaxassislik'
+                ),
+                'contact_person': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Mas'ul shaxs"
+                ),
+                'phone': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Telefon raqam'
+                ),
+                'is_active': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Faol yoki faol emas'
+                ),
+            }
+        ),
         responses={200: PartnerProfileSerializer()},
         tags=["partner"]
     )
