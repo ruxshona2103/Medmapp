@@ -223,3 +223,332 @@ class PartnerResponseDocument(models.Model):
         if self.file and not self.file_name:
             self.file_name = self.file.name.split('/')[-1]
         super().save(*args, **kwargs)
+
+
+# ===============================================================
+# OPERATOR MODEL - MOVED TO authentication.models.OperatorProfile
+# ===============================================================
+# Operator modeli authentication app ichida mavjud.
+# Agar operator profile kerak bo'lsa, authentication.models.OperatorProfile ishlatiladi.
+
+
+# ===============================================================
+# OPERATOR-PARTNER CONVERSATION MODEL
+# ===============================================================
+class OperatorPartnerConversation(models.Model):
+    """
+    Operator va Partner o'rtasidagi suhbat
+
+    Bu model Operator va Partner o'rtasidagi suhbatlarni boshqarish uchun.
+    Consultation modeliga o'xshash, lekin Operator-Partner uchun.
+    """
+    # Ishtirokchilar
+    operator = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='operator_partner_chats',
+        verbose_name='Operator',
+        limit_choices_to={'role': 'operator'}
+    )
+
+    partner = models.ForeignKey(
+        Partner,
+        on_delete=models.PROTECT,
+        related_name='partner_operator_chats',
+        verbose_name='Partner'
+    )
+
+    # Suhbat ma'lumotlari
+    title = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Suhbat mavzusi'
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name='Faol'
+    )
+
+    # Kim yaratgan
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='created_op_partner_conversations',
+        verbose_name='Yaratuvchi'
+    )
+
+    # Oxirgi xabar vaqti
+    last_message_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Oxirgi xabar vaqti'
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Yaratilgan')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Yangilangan')
+
+    class Meta:
+        verbose_name = 'Operator-Partner Suhbat'
+        verbose_name_plural = 'Operator-Partner Suhbatlar'
+        db_table = 'partners_op_partner_conversation'
+        ordering = ['-last_message_at', '-created_at']
+        indexes = [
+            models.Index(fields=['operator', 'is_active']),
+            models.Index(fields=['partner', 'is_active']),
+            models.Index(fields=['last_message_at']),
+        ]
+        # Bir operator va bir partner o'rtasida faqat bitta faol suhbat bo'lishi kerak
+        constraints = [
+            models.UniqueConstraint(
+                fields=['operator', 'partner'],
+                condition=models.Q(is_active=True),
+                name='unique_active_op_partner_conversation'
+            )
+        ]
+
+    def __str__(self):
+        operator_name = getattr(self.operator, 'get_full_name', lambda: str(self.operator))()
+        partner_name = self.partner.name
+        return self.title or f"Suhbat: {operator_name} - {partner_name}"
+
+    def save(self, *args, **kwargs):
+        # Title bo'sh bo'lsa, avtomatik yaratish
+        if not self.title:
+            operator_name = getattr(self.operator, 'get_full_name', lambda: str(self.operator))()
+            self.title = f"{operator_name} - {self.partner.name}"
+        super().save(*args, **kwargs)
+
+
+# ===============================================================
+# OPERATOR-PARTNER MESSAGE MODEL
+# ===============================================================
+class OperatorPartnerMessage(models.Model):
+    """
+    Operator va Partner o'rtasidagi xabarlar
+    """
+    TYPE_CHOICES = (
+        ('text', 'Matn'),
+        ('file', 'Fayl'),
+        ('system', 'Tizim xabari'),
+    )
+
+    # Suhbatga tegishli
+    conversation = models.ForeignKey(
+        OperatorPartnerConversation,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        verbose_name='Suhbat'
+    )
+
+    # Kim yuborgan
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='op_partner_sent_messages',
+        verbose_name='Yuboruvchi'
+    )
+
+    # Xabar turi va mazmuni
+    type = models.CharField(
+        max_length=10,
+        choices=TYPE_CHOICES,
+        default='text',
+        verbose_name='Xabar turi'
+    )
+
+    content = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Xabar matni'
+    )
+
+    # Javob berish
+    reply_to = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='replies',
+        verbose_name='Javob'
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Yuborilgan')
+    edited_at = models.DateTimeField(null=True, blank=True, verbose_name='Tahrirlangan')
+
+    # Status
+    is_deleted = models.BooleanField(default=False, verbose_name="O'chirilgan")
+    is_read = models.BooleanField(default=False, verbose_name="O'qilgan")
+
+    class Meta:
+        verbose_name = 'Operator-Partner Xabar'
+        verbose_name_plural = 'Operator-Partner Xabarlar'
+        db_table = 'partners_op_partner_message'
+        ordering = ['created_at', 'id']
+        indexes = [
+            models.Index(fields=['conversation', 'created_at']),
+            models.Index(fields=['sender', 'created_at']),
+            models.Index(fields=['conversation', 'is_read']),
+        ]
+
+    def __str__(self):
+        return f"Xabar #{self.pk} - {self.conversation}"
+
+    def soft_delete(self):
+        """Xabarni soft delete qilish"""
+        self.is_deleted = True
+        self.content = "[O'chirilgan xabar]"
+        self.save(update_fields=['is_deleted', 'content'])
+
+    def mark_as_read(self):
+        """Xabarni o'qilgan deb belgilash"""
+        if not self.is_read:
+            self.is_read = True
+            self.save(update_fields=['is_read'])
+
+
+# ===============================================================
+# OPERATOR-PARTNER ATTACHMENT MODEL
+# ===============================================================
+def op_partner_chat_upload_path(instance, filename):
+    """
+    Fayl yuklash yo'li
+    """
+    import os
+    timestamp = timezone.now()
+    safe_filename = "".join(
+        c for c in os.path.basename(filename) if c.isalnum() or c in "._-"
+    )
+    return f"op_partner_chat/{timestamp:%Y/%m/%d}/{instance.message_id}_{safe_filename}"
+
+
+class OperatorPartnerAttachment(models.Model):
+    """
+    Operator-Partner xabariga biriktirilgan fayl
+    """
+    FILE_TYPE_CHOICES = (
+        ('image', 'Rasm'),
+        ('video', 'Video'),
+        ('document', 'Hujjat'),
+        ('other', 'Boshqa'),
+    )
+
+    # Xabarga tegishli
+    message = models.ForeignKey(
+        OperatorPartnerMessage,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+        verbose_name='Xabar'
+    )
+
+    # Fayl ma'lumotlari
+    file = models.FileField(
+        upload_to=op_partner_chat_upload_path,
+        verbose_name='Fayl'
+    )
+
+    file_type = models.CharField(
+        max_length=20,
+        choices=FILE_TYPE_CHOICES,
+        default='other',
+        verbose_name='Fayl turi'
+    )
+
+    mime_type = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='MIME turi'
+    )
+
+    size = models.PositiveBigIntegerField(
+        default=0,
+        verbose_name='Hajm (bytes)'
+    )
+
+    original_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Asl fayl nomi'
+    )
+
+    # Kim yuklagan
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='op_partner_chat_files',
+        verbose_name='Yuklagan'
+    )
+
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Yuklangan vaqt'
+    )
+
+    class Meta:
+        verbose_name = 'Operator-Partner Fayl'
+        verbose_name_plural = 'Operator-Partner Fayllar'
+        db_table = 'partners_op_partner_attachment'
+        ordering = ['-uploaded_at']
+        indexes = [
+            models.Index(fields=['message', 'uploaded_at']),
+            models.Index(fields=['uploaded_by']),
+        ]
+
+    def save(self, *args, **kwargs):
+        """Fayl ma'lumotlarini avtomatik to'ldirish"""
+        import os
+        import mimetypes
+
+        if self.file:
+            # Fayl nomini saqlash
+            self.original_name = (
+                os.path.basename(self.file.name) if hasattr(self.file, 'name') else ''
+            )
+
+            # Hajmni saqlash
+            if hasattr(self.file, 'size'):
+                self.size = self.file.size
+
+            # MIME turi
+            if hasattr(self.file, 'content_type') and self.file.content_type:
+                self.mime_type = self.file.content_type
+            elif self.original_name:
+                guessed, _ = mimetypes.guess_type(self.original_name)
+                self.mime_type = guessed or 'application/octet-stream'
+            else:
+                self.mime_type = self.mime_type or 'application/octet-stream'
+
+            # Fayl turini aniqlash
+            if self.mime_type.startswith('image/'):
+                self.file_type = 'image'
+            elif self.mime_type.startswith('video/'):
+                self.file_type = 'video'
+            elif self.mime_type.startswith(
+                ('application/pdf', 'application/msword',
+                 'application/vnd.openxmlformats-officedocument')
+            ):
+                self.file_type = 'document'
+            else:
+                self.file_type = 'other'
+
+        super().save(*args, **kwargs)
+
+    def get_file_url(self):
+        """Fayl URL"""
+        return self.file.url if self.file else None
+
+    @property
+    def formatted_size(self):
+        """Formatlangan hajm"""
+        size = self.size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
+
+    def __str__(self):
+        return f"{self.original_name} - {self.formatted_size}"

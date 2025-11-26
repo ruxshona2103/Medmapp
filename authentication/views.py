@@ -310,15 +310,32 @@ class OperatorProfileView(generics.RetrieveUpdateAPIView):
         )
         return profile
 
-    @swagger_auto_schema(operation_summary="Operator profili", operation_description="Operator profil ma'lumotlarini olish", tags=["operator"])
+    @swagger_auto_schema(
+        operation_summary="Operator profili",
+        operation_description="Operator profil ma'lumotlarini olish",
+        responses={200: OperatorProfileSerializer()},
+        tags=["operator"]
+    )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="Profilni to'liq yangilash", operation_description="Operator profilini to'liq yangilash", tags=["operator"])
+    @swagger_auto_schema(
+        operation_summary="Profilni to'liq yangilash (Avatar bilan)",
+        operation_description="Operator profilini to'liq yangilash. Avatar yuklash mumkin (multipart/form-data).",
+        request_body=OperatorProfileSerializer,
+        responses={200: OperatorProfileSerializer()},
+        tags=["operator"]
+    )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="Profilni qisman yangilash", operation_description="Operator profilini qisman yangilash", tags=["operator"])
+    @swagger_auto_schema(
+        operation_summary="Profilni qisman yangilash (Avatar bilan)",
+        operation_description="Operator profilini qisman yangilash. Avatar yuklash mumkin (multipart/form-data).",
+        request_body=OperatorProfileSerializer,
+        responses={200: OperatorProfileSerializer()},
+        tags=["operator"]
+    )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 

@@ -22,6 +22,8 @@ from .permissions import IsPartnerUser, IsPartnerOrOperator
 
 
 import logging
+from django.utils import timezone
+
 logger = logging.getLogger(__name__)
 
 
@@ -143,15 +145,32 @@ class PartnerProfileView(generics.RetrieveUpdateAPIView):
         )
         return profile
 
-    @swagger_auto_schema(operation_summary="Hamkor profili", operation_description="Hamkor profil ma'lumotlarini olish", tags=["partner"])
+    @swagger_auto_schema(
+        operation_summary="Hamkor profili",
+        operation_description="Hamkor profil ma'lumotlarini olish",
+        responses={200: PartnerProfileSerializer()},
+        tags=["partner"]
+    )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="Profilni to'liq yangilash", operation_description="Hamkor profilini to'liq yangilash", tags=["partner"])
+    @swagger_auto_schema(
+        operation_summary="Profilni to'liq yangilash (Avatar bilan)",
+        operation_description="Hamkor profilini to'liq yangilash. Avatar yuklash mumkin (multipart/form-data).",
+        request_body=PartnerProfileSerializer,
+        responses={200: PartnerProfileSerializer()},
+        tags=["partner"]
+    )
     def put(self, request, *args, **kwargs):
         return super().put(request, *args, **kwargs)
 
-    @swagger_auto_schema(operation_summary="Profilni qisman yangilash", operation_description="Hamkor profilini qisman yangilash", tags=["partner"])
+    @swagger_auto_schema(
+        operation_summary="Profilni qisman yangilash (Avatar bilan)",
+        operation_description="Hamkor profilini qisman yangilash. Avatar yuklash mumkin (multipart/form-data).",
+        request_body=PartnerProfileSerializer,
+        responses={200: PartnerProfileSerializer()},
+        tags=["partner"]
+    )
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 
@@ -221,6 +240,347 @@ class PartnerResponseViewSet(viewsets.ReadOnlyModelViewSet):
 
         serializer = self.get_serializer(instance, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ===============================================================
+# OPERATOR-PARTNER CONVERSATION VIEWS
+# ===============================================================
+
+from .models import (
+    OperatorPartnerConversation,
+    OperatorPartnerMessage,
+)
+from .serializers import (
+    OperatorPartnerConversationSerializer,
+    OperatorPartnerConversationListSerializer,
+    OperatorPartnerMessageSerializer,
+    OperatorPartnerMessageCreateSerializer,
+)
+
+
+class OperatorPartnerConversationPagination(PageNumberPagination):
+    """Suhbatlar uchun pagination"""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class OperatorPartnerConversationViewSet(viewsets.ModelViewSet):
+    """
+    Operator va Partner o'rtasidagi suhbatlar
+
+    - Operator o'z suhbatlarini ko'radi
+    - Partner o'z suhbatlarini ko'radi
+    - Yangi suhbat yaratish
+    - Suhbatni ko'rish
+    """
+    permission_classes = [IsAuthenticated, IsPartnerOrOperator]
+    pagination_class = OperatorPartnerConversationPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return OperatorPartnerConversationListSerializer
+        return OperatorPartnerConversationSerializer
+
+    def get_queryset(self):
+        """
+        Foydalanuvchi roliga qarab suhbatlarni filter qilish
+        """
+        user = self.request.user
+        user_role = getattr(user, 'role', None)
+
+        qs = OperatorPartnerConversation.objects.select_related(
+            'operator', 'partner', 'created_by'
+        ).prefetch_related('messages').filter(is_active=True)
+
+        # Operator uchun - o'zi ishtirok etgan suhbatlar
+        if user_role == 'operator':
+            qs = qs.filter(operator=user)
+
+        # Partner uchun - o'z profili bilan bog'liq suhbatlar
+        elif user_role == 'partner':
+            partner = getattr(user, 'partner_profile', None)
+            if partner:
+                qs = qs.filter(partner=partner)
+            else:
+                return OperatorPartnerConversation.objects.none()
+
+        return qs.order_by('-last_message_at', '-created_at')
+
+    def get_serializer_context(self):
+        """Context"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    @swagger_auto_schema(
+        operation_summary="Suhbatlar ro'yxati",
+        operation_description="Operator-Partner suhbatlar ro'yxati",
+        manual_parameters=[
+            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
+            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa hajmi"),
+        ],
+        responses={200: OperatorPartnerConversationListSerializer(many=True)},
+        tags=["operator-partner-chat"]
+    )
+    def list(self, request, *args, **kwargs):
+        """Suhbatlar ro'yxati"""
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Suhbat yaratish",
+        operation_description="Yangi Operator-Partner suhbat yaratish",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['partner_id'],
+            properties={
+                'partner_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="Partner ID"),
+                'title': openapi.Schema(type=openapi.TYPE_STRING, description="Suhbat mavzusi"),
+            }
+        ),
+        responses={201: OperatorPartnerConversationSerializer()},
+        tags=["operator-partner-chat"]
+    )
+    def create(self, request, *args, **kwargs):
+        """
+        Yangi suhbat yaratish
+
+        Operator yoki Partner yangi suhbat yaratishi mumkin.
+        Agar suhbat allaqachon mavjud bo'lsa, mavjud suhbat qaytariladi.
+        """
+        user = request.user
+        user_role = getattr(user, 'role', None)
+
+        partner_id = request.data.get('partner_id')
+        title = request.data.get('title', '')
+
+        if not partner_id:
+            return Response(
+                {'detail': 'Partner ID kiritilishi shart'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Partner ni olish
+        from .models import Partner
+        try:
+            partner = Partner.objects.get(id=partner_id)
+        except Partner.DoesNotExist:
+            return Response(
+                {'detail': 'Partner topilmadi'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Operator aniqlash
+        if user_role == 'operator':
+            operator = user
+        elif user_role == 'partner':
+            # Partner suhbat yaratsa, operator tanlanishi kerak
+            operator_id = request.data.get('operator_id')
+            if not operator_id:
+                return Response(
+                    {'detail': 'Operator ID kiritilishi shart'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            try:
+                operator = User.objects.get(id=operator_id, role='operator')
+            except User.DoesNotExist:
+                return Response(
+                    {'detail': 'Operator topilmadi'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            return Response(
+                {'detail': 'Faqat Operator va Partner suhbat yaratishi mumkin'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Mavjud suhbatni tekshirish
+        conversation = OperatorPartnerConversation.objects.filter(
+            operator=operator,
+            partner=partner,
+            is_active=True
+        ).first()
+
+        if conversation:
+            # Mavjud suhbat qaytarish
+            serializer = self.get_serializer(conversation)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Yangi suhbat yaratish
+        conversation = OperatorPartnerConversation.objects.create(
+            operator=operator,
+            partner=partner,
+            title=title,
+            created_by=user
+        )
+
+        serializer = self.get_serializer(conversation)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @swagger_auto_schema(
+        operation_summary="Suhbat tafsilotlari",
+        operation_description="Suhbat va uning xabarlarini olish",
+        responses={200: OperatorPartnerConversationSerializer()},
+        tags=["operator-partner-chat"]
+    )
+    def retrieve(self, request, *args, **kwargs):
+        """Suhbat tafsilotlari"""
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Xabar yuborish",
+        operation_description="Suhbatga xabar yuborish",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['content'],
+            properties={
+                'content': openapi.Schema(type=openapi.TYPE_STRING, description="Xabar matni"),
+                'reply_to': openapi.Schema(type=openapi.TYPE_INTEGER, description="Javob beriladigan xabar ID"),
+                'type': openapi.Schema(type=openapi.TYPE_STRING, enum=['text', 'file', 'system'], description="Xabar turi"),
+            }
+        ),
+        responses={201: OperatorPartnerMessageSerializer()},
+        tags=["operator-partner-chat"]
+    )
+    @action(detail=True, methods=['post'], url_path='send-message')
+    def send_message(self, request, pk=None):
+        """
+        Suhbatga xabar yuborish
+
+        POST /api/conversations/{id}/send-message/
+        """
+        conversation = self.get_object()
+
+        # Foydalanuvchi suhbatda ishtirok etayotganini tekshirish
+        user = request.user
+        user_role = getattr(user, 'role', None)
+
+        if user_role == 'operator' and conversation.operator != user:
+            return Response(
+                {'detail': 'Bu suhbatda ishtirok eta olmaysiz'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if user_role == 'partner':
+            partner = getattr(user, 'partner_profile', None)
+            if not partner or conversation.partner != partner:
+                return Response(
+                    {'detail': 'Bu suhbatda ishtirok eta olmaysiz'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # Xabar yaratish
+        data = request.data.copy()
+        data['conversation'] = conversation.id
+
+        serializer = OperatorPartnerMessageCreateSerializer(
+            data=data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        message = serializer.save()
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @swagger_auto_schema(
+        operation_summary="Xabarlarni o'qilgan deb belgilash",
+        operation_description="Suhbatdagi barcha xabarlarni o'qilgan deb belgilash",
+        responses={200: "Xabarlar o'qilgan deb belgilandi"},
+        tags=["operator-partner-chat"]
+    )
+    @action(detail=True, methods=['post'], url_path='mark-as-read')
+    def mark_as_read(self, request, pk=None):
+        """
+        Suhbatdagi xabarlarni o'qilgan deb belgilash
+
+        POST /api/conversations/{id}/mark-as-read/
+        """
+        conversation = self.get_object()
+        user = request.user
+
+        # Foydalanuvchi yuborgan xabarlar emas, balki boshqalar yuborgan xabarlarni o'qilgan deb belgilash
+        updated_count = conversation.messages.filter(
+            is_read=False,
+            is_deleted=False
+        ).exclude(sender=user).update(is_read=True)
+
+        return Response(
+            {'detail': f'{updated_count} ta xabar o\'qilgan deb belgilandi'},
+            status=status.HTTP_200_OK
+        )
+
+
+class OperatorPartnerMessagePagination(PageNumberPagination):
+    """Xabarlar uchun pagination"""
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
+class OperatorPartnerMessageViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Operator-Partner xabarlar
+
+    - Suhbat xabarlarini ko'rish
+    - Pagination
+    """
+    permission_classes = [IsAuthenticated, IsPartnerOrOperator]
+    serializer_class = OperatorPartnerMessageSerializer
+    pagination_class = OperatorPartnerMessagePagination
+
+    def get_queryset(self):
+        """Xabarlarni filter qilish"""
+        conversation_id = self.kwargs.get('conversation_id')
+        if not conversation_id:
+            return OperatorPartnerMessage.objects.none()
+
+        # Foydalanuvchi suhbatda ishtirok etayotganini tekshirish
+        user = self.request.user
+        user_role = getattr(user, 'role', None)
+
+        try:
+            conversation = OperatorPartnerConversation.objects.get(
+                id=conversation_id,
+                is_active=True
+            )
+        except OperatorPartnerConversation.DoesNotExist:
+            return OperatorPartnerMessage.objects.none()
+
+        # Ruxsat tekshirish
+        if user_role == 'operator' and conversation.operator != user:
+            return OperatorPartnerMessage.objects.none()
+
+        if user_role == 'partner':
+            partner = getattr(user, 'partner_profile', None)
+            if not partner or conversation.partner != partner:
+                return OperatorPartnerMessage.objects.none()
+
+        return OperatorPartnerMessage.objects.filter(
+            conversation=conversation,
+            is_deleted=False
+        ).select_related('sender', 'reply_to').prefetch_related('attachments').order_by('created_at')
+
+    def get_serializer_context(self):
+        """Context"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    @swagger_auto_schema(
+        operation_summary="Suhbat xabarlari",
+        operation_description="Suhbatning barcha xabarlarini olish",
+        manual_parameters=[
+            openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
+            openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa hajmi"),
+        ],
+        responses={200: OperatorPartnerMessageSerializer(many=True)},
+        tags=["operator-partner-chat"]
+    )
+    def list(self, request, conversation_id=None):
+        """Xabarlar ro'yxati"""
+        return super().list(request)
 
     @swagger_auto_schema(
         tags=["partner"],

@@ -118,6 +118,9 @@ class VisaCreateView(generics.CreateAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return VisaRequest.objects.none()
         return VisaRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -136,6 +139,9 @@ class VisaRetrieveView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return VisaRequest.objects.none()
         return VisaRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -153,6 +159,9 @@ class TransferCreateView(generics.CreateAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return TransferRequest.objects.none()
         return TransferRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -171,6 +180,9 @@ class TransferRetrieveView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return TransferRequest.objects.none()
         return TransferRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -189,6 +201,10 @@ class BookingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, BookingPermission]
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return Booking.objects.none()
+
         user = self.request.user
         if user.role in ["admin", "superadmin", "operator"]:
             return Booking.objects.all()
@@ -226,6 +242,9 @@ class TranslatorCreateView(generics.CreateAPIView):
     serializer_class = TranslatorRequestSerializer
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return TranslatorRequest.objects.none()
         return TranslatorRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -244,6 +263,9 @@ class TranslatorRetrieveView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return TranslatorRequest.objects.none()
         return TranslatorRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -261,6 +283,9 @@ class SimCardCreateView(generics.CreateAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return SimCardRequest.objects.none()
         return SimCardRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(
@@ -279,6 +304,9 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
+        # Swagger schema generation uchun
+        if getattr(self, 'swagger_fake_view', False):
+            return SimCardRequest.objects.none()
         return SimCardRequest.objects.filter(user=self.request.user)
 
     @swagger_auto_schema(

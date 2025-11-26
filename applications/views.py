@@ -65,6 +65,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
         return qs.prefetch_related("documents")
 
+    def get_serializer_context(self):
+        """
+        ✅ QOSHILDI - Request kontekstni serializer'ga uzatish
+
+        Bu metod DocumentSerializer ichida file_url ni to'g'ri generatsiya qilish uchun kerak
+        """
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
     @swagger_auto_schema(
         operation_summary="Arizalar ro'yxati",
         operation_description="Arizalarni filter va pagination bilan olish",

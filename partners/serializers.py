@@ -347,3 +347,320 @@ class PartnerProfileSerializer(serializers.ModelSerializer):
             return obj.avatar.url
         return None
 
+
+# ===============================================================
+# OPERATOR-PARTNER CONVERSATION SERIALIZERS
+# ===============================================================
+
+from .models import (
+    OperatorPartnerConversation,
+    OperatorPartnerMessage,
+    OperatorPartnerAttachment
+)
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class OperatorMinimalSerializer(serializers.ModelSerializer):
+    """Operator minimal ma'lumotlari"""
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'full_name', 'phone_number']
+
+    def get_full_name(self, obj):
+        """To'liq ism"""
+        if hasattr(obj, 'get_full_name') and callable(obj.get_full_name):
+            return obj.get_full_name()
+        return obj.phone_number
+
+
+class PartnerMinimalSerializer(serializers.ModelSerializer):
+    """Partner minimal ma'lumotlari"""
+
+    class Meta:
+        from .models import Partner
+        model = Partner
+        fields = ['id', 'name', 'code', 'specialization']
+
+
+class OperatorPartnerAttachmentSerializer(serializers.ModelSerializer):
+    """Operator-Partner fayl serializer"""
+    file_url = serializers.SerializerMethodField()
+    uploaded_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OperatorPartnerAttachment
+        fields = [
+            'id',
+            'file',
+            'file_url',
+            'file_type',
+            'mime_type',
+            'size',
+            'formatted_size',
+            'original_name',
+            'uploaded_by',
+            'uploaded_by_name',
+            'uploaded_at',
+        ]
+        read_only_fields = [
+            'id',
+            'file_url',
+            'file_type',
+            'mime_type',
+            'size',
+            'formatted_size',
+            'original_name',
+            'uploaded_by',
+            'uploaded_by_name',
+            'uploaded_at',
+        ]
+        extra_kwargs = {
+            'file': {'write_only': True}
+        }
+
+    def get_file_url(self, obj):
+        """Fayl URL"""
+        if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+
+    def get_uploaded_by_name(self, obj):
+        """Yuklagan foydalanuvchi ismi"""
+        if obj.uploaded_by:
+            return obj.uploaded_by.get_full_name()
+        return None
+
+
+class OperatorPartnerMessageSerializer(serializers.ModelSerializer):
+    """Operator-Partner xabar serializer"""
+    sender_name = serializers.SerializerMethodField()
+    sender_role = serializers.SerializerMethodField()
+    attachments = OperatorPartnerAttachmentSerializer(many=True, read_only=True)
+    reply_to_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OperatorPartnerMessage
+        fields = [
+            'id',
+            'conversation',
+            'sender',
+            'sender_name',
+            'sender_role',
+            'type',
+            'content',
+            'reply_to',
+            'reply_to_message',
+            'attachments',
+            'created_at',
+            'edited_at',
+            'is_deleted',
+            'is_read',
+        ]
+        read_only_fields = [
+            'id',
+            'sender',
+            'sender_name',
+            'sender_role',
+            'created_at',
+            'edited_at',
+            'is_deleted',
+            'is_read',
+            'reply_to_message',
+        ]
+
+    def get_sender_name(self, obj):
+        """Yuboruvchi ismi"""
+        if obj.sender:
+            return obj.sender.get_full_name()
+        return None
+
+    def get_sender_role(self, obj):
+        """Yuboruvchi roli"""
+        if obj.sender:
+            return getattr(obj.sender, 'role', 'unknown')
+        return None
+
+    def get_reply_to_message(self, obj):
+        """Javob berilyotgan xabar"""
+        if obj.reply_to:
+            return {
+                'id': obj.reply_to.id,
+                'content': obj.reply_to.content,
+                'sender_name': obj.reply_to.sender.get_full_name() if obj.reply_to.sender else None,
+                'created_at': obj.reply_to.created_at,
+            }
+        return None
+
+
+class OperatorPartnerConversationSerializer(serializers.ModelSerializer):
+    """Operator-Partner suhbat serializer (to'liq)"""
+    operator_name = serializers.SerializerMethodField()
+    partner_info = PartnerMinimalSerializer(source='partner', read_only=True)
+    messages = OperatorPartnerMessageSerializer(many=True, read_only=True)
+    unread_count = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OperatorPartnerConversation
+        fields = [
+            'id',
+            'operator',
+            'operator_name',
+            'partner',
+            'partner_info',
+            'title',
+            'is_active',
+            'created_by',
+            'last_message_at',
+            'last_message',
+            'unread_count',
+            'messages',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'operator_name',
+            'partner_info',
+            'created_by',
+            'last_message_at',
+            'last_message',
+            'unread_count',
+            'messages',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_operator_name(self, obj):
+        """Operator ismi"""
+        if obj.operator:
+            return obj.operator.get_full_name()
+        return None
+
+    def get_unread_count(self, obj):
+        """O'qilmagan xabarlar soni"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return 0
+
+        return obj.messages.filter(
+            is_read=False,
+            is_deleted=False
+        ).exclude(sender=request.user).count()
+
+    def get_last_message(self, obj):
+        """Oxirgi xabar"""
+        last_msg = obj.messages.filter(is_deleted=False).order_by('-created_at').first()
+        if last_msg:
+            return {
+                'id': last_msg.id,
+                'content': last_msg.content,
+                'sender_name': last_msg.sender.get_full_name() if last_msg.sender else None,
+                'type': last_msg.type,
+                'created_at': last_msg.created_at,
+            }
+        return None
+
+
+class OperatorPartnerConversationListSerializer(serializers.ModelSerializer):
+    """Operator-Partner suhbatlar ro'yxati serializer"""
+    operator_name = serializers.SerializerMethodField()
+    partner_info = PartnerMinimalSerializer(source='partner', read_only=True)
+    unread_count = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OperatorPartnerConversation
+        fields = [
+            'id',
+            'operator',
+            'operator_name',
+            'partner',
+            'partner_info',
+            'title',
+            'is_active',
+            'last_message_at',
+            'last_message',
+            'unread_count',
+            'created_at',
+        ]
+
+    def get_operator_name(self, obj):
+        """Operator ismi"""
+        if obj.operator:
+            return obj.operator.get_full_name()
+        return None
+
+    def get_unread_count(self, obj):
+        """O'qilmagan xabarlar soni"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            return 0
+
+        return obj.messages.filter(
+            is_read=False,
+            is_deleted=False
+        ).exclude(sender=request.user).count()
+
+    def get_last_message(self, obj):
+        """Oxirgi xabar"""
+        last_msg = obj.messages.filter(is_deleted=False).order_by('-created_at').first()
+        if last_msg:
+            return {
+                'id': last_msg.id,
+                'content': last_msg.content[:50] + '...' if len(last_msg.content) > 50 else last_msg.content,
+                'sender_name': last_msg.sender.get_full_name() if last_msg.sender else None,
+                'type': last_msg.type,
+                'created_at': last_msg.created_at,
+            }
+        return None
+
+
+class OperatorPartnerMessageCreateSerializer(serializers.ModelSerializer):
+    """Xabar yaratish serializer"""
+
+    class Meta:
+        model = OperatorPartnerMessage
+        fields = [
+            'conversation',
+            'content',
+            'reply_to',
+            'type',
+        ]
+
+    def validate_conversation(self, value):
+        """Suhbat faol ekanligini tekshirish"""
+        if not value.is_active:
+            raise serializers.ValidationError("Suhbat faol emas")
+        return value
+
+    def create(self, validated_data):
+        """Xabar yaratish"""
+        request = self.context.get('request')
+        if not request or not request.user:
+            raise serializers.ValidationError("Foydalanuvchi aniqlanmadi")
+
+        # Xabarni yaratish
+        message = OperatorPartnerMessage.objects.create(
+            sender=request.user,
+            **validated_data
+        )
+
+        # Suhbatning last_message_at ni yangilash
+        conversation = validated_data['conversation']
+        conversation.last_message_at = message.created_at
+        conversation.save(update_fields=['last_message_at'])
+
+        return message
+
+    def to_representation(self, instance):
+        """Response formatini to'g'rilash"""
+        return OperatorPartnerMessageSerializer(instance, context=self.context).data
+
