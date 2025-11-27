@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Application, ApplicationHistory, Document
-from patients.models import Patient
+from patients.models import Patient, PatientDocument
 from core.models import Stage
 import os
 
@@ -144,18 +144,21 @@ class ApplicationSerializer(serializers.ModelSerializer):
     Ariza to'liq ma'lumotlari
 
     ✅ QOSHILDI:
-    - documents (DocumentSerializer bilan)
+    - documents (DocumentSerializer bilan) - Arizaga yuklangan hujjatlar
+    - patient_documents (PatientDocumentSerializer bilan) - Bemor anketa to'ldirganda yuklagan hujjatlar
     - history (ApplicationHistorySerializer bilan)
     - patient.complaints
     - patient.previous_diagnosis
     """
     patient = PatientMinimalSerializer(read_only=True)
     stage = StageMinimalSerializer(read_only=True)
-    documents = DocumentSerializer(many=True, read_only=True)  # ✅ QOSHILDI
+    documents = DocumentSerializer(many=True, read_only=True)  # ✅ Arizaga yuklangan hujjatlar
+    patient_documents = serializers.SerializerMethodField()  # ✅ YANGI - Bemor hujjatlari
     history = serializers.SerializerMethodField()  # ✅ QOSHILDI
 
     # Qo'shimcha maydonlar
     documents_count = serializers.SerializerMethodField()
+    patient_documents_count = serializers.SerializerMethodField()  # ✅ YANGI
     status_display = serializers.SerializerMethodField()
 
     class Meta:
@@ -172,8 +175,10 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'comment',
-            'documents',  # ✅ QOSHILDI
+            'documents',  # ✅ Arizaga yuklangan hujjatlar
             'documents_count',
+            'patient_documents',  # ✅ YANGI - Bemor anketa hujjatlari
+            'patient_documents_count',  # ✅ YANGI
             'history',  # ✅ QOSHILDI
             'created_at',
             'updated_at',
@@ -185,12 +190,38 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'documents_count',
+            'patient_documents_count',
             'status_display',
         ]
 
     def get_documents_count(self, obj):
-        """Hujjatlar soni"""
+        """Arizaga yuklangan hujjatlar soni"""
         return obj.documents.count()
+
+    def get_patient_documents(self, obj):
+        """
+        ✅ YANGI - Bemor anketa to'ldirganda yuklagan hujjatlar
+
+        Bu metod bemorning barcha hujjatlarini qaytaradi
+        (PatientDocument model)
+        """
+        try:
+            # ✅ Circular import oldini olish uchun local import
+            from patients.serializers import PatientDocumentSerializer
+
+            patient_docs = PatientDocument.objects.filter(
+                patient=obj.patient
+            ).select_related('uploaded_by').order_by('-uploaded_at')
+            return PatientDocumentSerializer(patient_docs, many=True, context=self.context).data
+        except:
+            return []
+
+    def get_patient_documents_count(self, obj):
+        """Bemor hujjatlari soni"""
+        try:
+            return PatientDocument.objects.filter(patient=obj.patient).count()
+        except:
+            return 0
 
     def get_status_display(self, obj):
         """Status nomi"""
@@ -396,7 +427,8 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
     clinic = serializers.CharField(source='clinic_name', read_only=True)
     status_label = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()
-    documents = DocumentSerializer(many=True, read_only=True)  # ✅ QOSHILDI
+    documents = DocumentSerializer(many=True, read_only=True)  # ✅ Arizaga yuklangan hujjatlar
+    patient_documents = serializers.SerializerMethodField()  # ✅ YANGI - Bemor hujjatlari
     history = serializers.SerializerMethodField()  # ✅ QOSHILDI
 
     class Meta:
@@ -413,7 +445,8 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
             'status',
             'status_label',
             'date',
-            'documents',  # ✅ QOSHILDI
+            'documents',  # ✅ Arizaga yuklangan hujjatlar
+            'patient_documents',  # ✅ YANGI - Bemor anketa hujjatlari
             'history',  # ✅ QOSHILDI
             'created_at',
             'updated_at',
@@ -443,6 +476,21 @@ class CompletedApplicationSerializer(serializers.ModelSerializer):
         if obj.updated_at:
             return obj.updated_at.strftime('%Y-%m-%d')
         return None
+
+    def get_patient_documents(self, obj):
+        """
+        ✅ YANGI - Bemor anketa to'ldirganda yuklagan hujjatlar
+        """
+        try:
+            # ✅ Circular import oldini olish uchun local import
+            from patients.serializers import PatientDocumentSerializer
+
+            patient_docs = PatientDocument.objects.filter(
+                patient=obj.patient
+            ).select_related('uploaded_by').order_by('-uploaded_at')
+            return PatientDocumentSerializer(patient_docs, many=True, context=self.context).data
+        except:
+            return []
 
     def get_history(self, obj):
         """
