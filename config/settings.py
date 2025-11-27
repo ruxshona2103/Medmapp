@@ -8,9 +8,6 @@ from datetime import timedelta
 import dj_database_url
 from django.utils.translation import gettext_lazy as _
 
-# MUHIM: Bu import eng tepada bo'lishi shart!
-from corsheaders.defaults import default_headers
-
 # ===============================================================
 # BASE
 # ===============================================================
@@ -86,7 +83,7 @@ INSTALLED_APPS = [
 # MIDDLEWARE
 # ===============================================================
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # CORS eng tepada turishi kerak (Securitydan oldin)
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -139,13 +136,14 @@ DATABASES = {
     "default": dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=600,
-        ssl_require=False,
+        ssl_require=False,   # Docker Postgres uchun MUHIM!
     )
 }
 
 # ===============================================================
 # HTTPS / REVERSE PROXY FIX
 # ===============================================================
+# NGINX -> Django uchun to‘g‘ri SSL forwarding
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # ===============================================================
@@ -162,21 +160,25 @@ SIMPLE_JWT = {
 }
 
 # ===============================================================
-# CORS & CSRF (CORRECTED)
+# CORS & CSRF (PERFECT)
 # ===============================================================
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://www.medmapp.uz",
+    "https://medmapp.uz",
     "https://dev.medmapp.uz",
+
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
     "http://127.0.0.1:8000",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
+
     "https://med-mapp-admin.vercel.app",
     "https://med-mapp-one.vercel.app",
     "https://medmapp-1pjj.onrender.com",
+
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
@@ -186,28 +188,19 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 CSRF_TRUSTED_ORIGINS = [
     "https://www.medmapp.uz",
     "https://dev.medmapp.uz",
+
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
     "http://127.0.0.1:8000",
+
+    "https://*.vercel.app",
     "https://med-mapp-admin.vercel.app",
     "https://med-mapp-one.vercel.app",
     "https://medmapp-1pjj.onrender.com",
 ]
 
-# Standard headerlarga ruxsat beramiz + qo'shimcha keraklilar
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    "sentry-trace",
-    "baggage",
-]
-
-CORS_ALLOW_METHODS = [
-    "DELETE",
-    "GET",
-    "OPTIONS",
-    "PATCH",
-    "POST",
-    "PUT",
-]
+CORS_ALLOW_HEADERS = ["*"]
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 # ===============================================================
 # STATIC / MEDIA
@@ -243,7 +236,7 @@ if DEBUG:
     )
 
 # ===============================================================
-# SWAGGER
+# SWAGGER (HTTPS FIX)
 # ===============================================================
 SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
@@ -281,9 +274,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ===============================================================
 # DJANGO CHANNELS (WebSocket)
 # ===============================================================
+# Redis URL for channel layer (production)
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+# Channel Layers configuration
 if IS_PRODUCTION:
+    # Production: Redis backend
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -295,6 +291,7 @@ if IS_PRODUCTION:
         },
     }
 else:
+    # Development: In-memory backend (Redis shart emas)
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels.layers.InMemoryChannelLayer",
