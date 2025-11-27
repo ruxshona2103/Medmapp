@@ -160,26 +160,27 @@ SIMPLE_JWT = {
 }
 
 # ===============================================================
-# CORS & CSRF (PERFECT)
+# CORS & CSRF (FIXED)
 # ===============================================================
+from corsheaders.defaults import default_headers
+
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://www.medmapp.uz",
     "https://dev.medmapp.uz",
-
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
     "http://127.0.0.1:8000",
-
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # Render va Vercel domenlari
     "https://med-mapp-admin.vercel.app",
     "https://med-mapp-one.vercel.app",
     "https://medmapp-1pjj.onrender.com",
-
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
 ]
 
+# Regex ham yaxshi, qolaversin
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://[\w-]+\.vercel\.app$",
 ]
@@ -187,19 +188,25 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 CSRF_TRUSTED_ORIGINS = [
     "https://www.medmapp.uz",
     "https://dev.medmapp.uz",
-
     "https://admin.medmapp.uz",
     "http://admin.medmapp.uz",
     "http://127.0.0.1:8000",
-
-    "https://*.vercel.app",
     "https://med-mapp-admin.vercel.app",
     "https://med-mapp-one.vercel.app",
     "https://medmapp-1pjj.onrender.com",
 ]
 
-CORS_ALLOW_HEADERS = ["*"]
-CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+# MUHIM O'ZGARISH SHU YERDA:
+CORS_ALLOW_HEADERS = list(default_headers)
+
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
 
 # ===============================================================
 # STATIC / MEDIA
