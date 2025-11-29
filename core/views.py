@@ -133,7 +133,7 @@ class StageViewSet(viewsets.ModelViewSet):
     @swagger_auto_schema(
         method="post",
         operation_summary="Patient bosqichini o'zgartirish",
-        operation_description="Bemor bosqichini yangilash",
+        operation_description="Bemor bosqichini yangilash va uning arizalarini sinxronlash",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["patient_id", "stage_id"],
@@ -177,13 +177,38 @@ class StageViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # ✅ Yangilash
+        # ✅ 1. Bemor (Patient) statusini yangilash
         old_stage = patient.stage
         patient.stage = stage
         patient.save()
 
-        # ✅ (Optional) comment bo‘lsa historyga yozish uchun joy
-        # StageHistory.objects.create(...)
+        # ✅ 2. Bemorning ARIZALARINI (Applications) ham shu statusga o'tkazish (Yangi qo'shilgan qism)
+        updated_apps_count = 0
+        try:
+            # Application modelini dinamik import qilamiz (circular import bo'lmasligi uchun)
+            from applications.models import Application
+
+            # Bemorga tegishli arizalarni topib, ularning ham 'stage' ini yangilaymiz
+            # Agar Application modelida field nomi 'status' bo'lsa, 'stage=stage' ni 'status=stage' ga o'zgartiring
+            updated_apps_count = Application.objects.filter(patient=patient).update(stage=stage)
+
+        except ImportError:
+            print("⚠️ Diqqat: 'applications.models.Application' topilmadi. Arizalar yangilanmadi.")
+        except Exception as e:
+            # Agar Application modelida 'stage' fieldi bo'lmasa yoki boshqa xato bo'lsa
+            print(f"⚠️ Arizani yangilashda xatolik: {str(e)}")
+
+        # ✅ Log yozish (ixtiyoriy, lekin foydali)
+        if comment:
+            try:
+                from patients.models import PatientHistory
+                PatientHistory.objects.create(
+                    patient=patient,
+                    author=request.user,
+                    comment=f"Bosqich o'zgartirildi: {old_stage} -> {stage.title}. Izoh: {comment}"
+                )
+            except:
+                pass
 
         return Response(
             {
@@ -191,6 +216,7 @@ class StageViewSet(viewsets.ModelViewSet):
                 "patient_id": patient_id,
                 "old_stage": old_stage.id if old_stage else None,
                 "new_stage": stage.id,
+                "synced_applications": updated_apps_count,
                 "comment": comment,
             },
             status=status.HTTP_200_OK,

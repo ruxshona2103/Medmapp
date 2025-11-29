@@ -1,57 +1,46 @@
-# ===============================================================
-# DJANGO SETTINGS – MEDMAPP (FINAL PRODUCTION VERSION)
-# ===============================================================
-
 import os
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url
 from django.utils.translation import gettext_lazy as _
+from dotenv import load_dotenv
 
 # ===============================================================
-# BASE
+# 1. LOAD ENVIRONMENT VARIABLES
+# ===============================================================
+# .env faylni yuklaymiz. Serverda bu fayl bo'lmasa, Environment Variablelardan oladi.
+load_dotenv()
+
+# ===============================================================
+# 2. BASE CONFIGURATION
 # ===============================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
+# Maxfiy kalit .env dan olinadi, topilmasa default (faqat dev uchun) qo'yiladi
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-key-change-in-prod")
 
+# Environmentni aniqlash
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 IS_PRODUCTION = ENVIRONMENT == "production"
 
+# Debug rejimi (Stringni Booleanga o'girish)
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
-# ===============================================================
-# HOSTS
-# ===============================================================
-ALLOWED_HOSTS = [
-    "admin.medmapp.uz",
-    "medmapp-1pjj.onrender.com",
-    "med-mapp-admin.vercel.app",
-    "med-mapp-one.vercel.app",
-    "176.96.243.144",
-    "localhost",
-    "127.0.0.1",
-    ".vercel.app",
-]
 
 # ===============================================================
-# LANGUAGE & TIME
+# 3. HOSTS & SECURITY
 # ===============================================================
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
-USE_I18N = True
-USE_TZ = True
+# Vergul bilan ajratilgan stringni listga aylantiramiz
+def get_list(text):
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",")]
 
-LANGUAGES = [
-    ("uz", _("Uzbek")),
-    ("ru", _("Russian")),
-    ("en", _("English")),
-]
 
-LOCALE_PATHS = [BASE_DIR / "locale"]
+ALLOWED_HOSTS = get_list(os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost"))
 
 # ===============================================================
-# INSTALLED APPS
+# 4. INSTALLED APPS
 # ===============================================================
 INSTALLED_APPS = [
     "daphne",  # WebSocket server - BIRINCHI bo'lishi kerak!
@@ -62,12 +51,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    "channels",  # Django Channels
+    # Third party apps
+    "channels",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "drf_yasg",
 
+    # Local apps
     "authentication",
     "patients.apps.PatientsConfig",
     "partners.apps.PartnersConfig",
@@ -80,12 +71,12 @@ INSTALLED_APPS = [
 ]
 
 # ===============================================================
-# MIDDLEWARE
+# 5. MIDDLEWARE
 # ===============================================================
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  # Eng tepada
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # Static files uchun
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.locale.LocaleMiddleware",
@@ -98,7 +89,7 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 
 # ===============================================================
-# TEMPLATES
+# 6. TEMPLATES
 # ===============================================================
 TEMPLATES = [
     {
@@ -120,90 +111,68 @@ WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
 # ===============================================================
-# AUTH USER
+# 7. AUTH USER MODEL
 # ===============================================================
 AUTH_USER_MODEL = "authentication.CustomUser"
 
 # ===============================================================
-# DATABASE (POSTGRES – DOCKER + RENDER SUPPORT)
+# 8. DATABASE (SMART SWITCHING)
 # ===============================================================
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://medmapp_db_user:bSHiwNcJcL8206Mby5kMdRp8cF0TPCEF@dpg-d3l05vqdbo4c73egnfs0-a.oregon-postgres.render.com:5432/medmapp_db"
-)
+# Mantiq:
+# 1. Serverda (IS_PRODUCTION=True) -> PostgreSQL talab qilinadi.
+# 2. Lokalda (IS_PRODUCTION=False) -> Agar DATABASE_URL berilmagan bo'lsa, SQLite ishlatadi.
 
-DATABASES = {
-    "default": dj_database_url.config(
-        default=DATABASE_URL,
-        conn_max_age=600,
-        ssl_require=False,   # Docker Postgres uchun MUHIM!
-    )
-}
+if IS_PRODUCTION:
+    # 🌍 PRODUCTION (PostgreSQL)
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise ValueError("CRITICAL: Production muhitida DATABASE_URL topilmadi!")
 
-# ===============================================================
-# HTTPS / REVERSE PROXY FIX
-# ===============================================================
-# NGINX -> Django uchun to‘g‘ri SSL forwarding
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-
-# ===============================================================
-# JWT AUTHENTICATION
-# ===============================================================
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-}
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=database_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=True,  # Render/Cloud uchun xavfsizlik
+        )
+    }
+else:
+    # 💻 DEVELOPMENT (SQLite default)
+    # Agar .env da DATABASE_URL bo'lsa, o'shani ishlatadi, bo'lmasa SQLite.
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+            conn_max_age=600,
+        )
+    }
 
 # ===============================================================
-# CORS & CSRF (PERFECT)
+# 9. PASSWORD VALIDATION
 # ===============================================================
-CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOWED_ORIGINS = [
-    "https://www.medmapp.uz",
-    "https://medmapp.uz",
-    "https://dev.medmapp.uz",
-
-    "https://admin.medmapp.uz",
-    "http://admin.medmapp.uz",
-    "http://127.0.0.1:8000",
-
-    "https://med-mapp-admin.vercel.app",
-    "https://med-mapp-one.vercel.app",
-    "https://medmapp-1pjj.onrender.com",
-
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://[\w-]+\.vercel\.app$",
+# ===============================================================
+# 10. INTERNATIONALIZATION
+# ===============================================================
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "Asia/Tashkent"  # O'zbekiston vaqti
+USE_I18N = True
+USE_TZ = True
+
+LANGUAGES = [
+    ("uz", _("Uzbek")),
+    ("ru", _("Russian")),
+    ("en", _("English")),
 ]
-
-CSRF_TRUSTED_ORIGINS = [
-    "https://www.medmapp.uz",
-    "https://dev.medmapp.uz",
-
-    "https://admin.medmapp.uz",
-    "http://admin.medmapp.uz",
-    "http://127.0.0.1:8000",
-
-    "https://*.vercel.app",
-    "https://med-mapp-admin.vercel.app",
-    "https://med-mapp-one.vercel.app",
-    "https://medmapp-1pjj.onrender.com",
-]
-
-CORS_ALLOW_HEADERS = ["*"]
-CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 
 # ===============================================================
-# STATIC / MEDIA
+# 11. STATIC & MEDIA FILES
 # ===============================================================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -211,10 +180,21 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# WhiteNoise settings
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ===============================================================
-# DRF
+# 12. CORS & CSRF
+# ===============================================================
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = get_list(os.environ.get("CORS_ALLOWED_ORIGINS"))
+CSRF_TRUSTED_ORIGINS = get_list(os.environ.get("CSRF_TRUSTED_ORIGINS"))
+
+CORS_ALLOW_HEADERS = ["*"]
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+
+# ===============================================================
+# 13. REST FRAMEWORK (JWT)
 # ===============================================================
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -235,12 +215,21 @@ if DEBUG:
         "rest_framework.renderers.BrowsableAPIRenderer"
     )
 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
 # ===============================================================
-# SWAGGER (HTTPS FIX)
+# 14. SWAGGER
 # ===============================================================
 SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
-    "DEFAULT_API_URL": "https://admin.medmapp.uz",
     "SECURITY_DEFINITIONS": {
         "Bearer": {
             "type": "apiKey",
@@ -251,49 +240,32 @@ SWAGGER_SETTINGS = {
 }
 
 # ===============================================================
-# SECURITY
+# 15. REDIS & CHANNELS
 # ===============================================================
-if IS_PRODUCTION:
-    SECURE_SSL_REDIRECT = False
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
-    SECURE_HSTS_SECONDS = 0
+REDIS_URL = os.environ.get("REDIS_URL")
 
-# ===============================================================
-# LOGGING
-# ===============================================================
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "root": {"handlers": ["console"], "level": "WARNING"},
-}
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# ===============================================================
-# DJANGO CHANNELS (WebSocket)
-# ===============================================================
-# Redis URL for channel layer (production)
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-
-# Channel Layers configuration
-if IS_PRODUCTION:
-    # Production: Redis backend
+if IS_PRODUCTION and REDIS_URL:
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
             "CONFIG": {
                 "hosts": [REDIS_URL],
-                "capacity": 1500,
-                "expiry": 10,
             },
         },
     }
 else:
-    # Development: In-memory backend (Redis shart emas)
+    # Lokalda Redis shart emas, xotirada ishlaydi
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels.layers.InMemoryChannelLayer",
         },
     }
+
+# ===============================================================
+# 16. SECURITY (HTTPS)
+# ===============================================================
+if IS_PRODUCTION:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
