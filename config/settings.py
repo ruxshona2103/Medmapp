@@ -133,7 +133,7 @@ if IS_PRODUCTION:
             default=database_url,
             conn_max_age=600,
             conn_health_checks=True,
-            ssl_require=True,  # Render/Cloud uchun xavfsizlik
+            ssl_require=False,  # Render/Cloud uchun xavfsizlik
         )
     }
 else:
