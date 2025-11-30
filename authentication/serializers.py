@@ -75,12 +75,6 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class OtpRequestSerializer(serializers.Serializer):
-    """
-    BULLETPROOF OTP Request Serializer
-    - Dual storage (Cache + DB)
-    - Thread-safe
-    - Proper error handling
-    """
     phone_number = serializers.CharField()
 
     def validate_phone_number(self, value):
