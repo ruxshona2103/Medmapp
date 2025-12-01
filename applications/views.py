@@ -1,4 +1,4 @@
-# applications/views.py
+import logging
 from django.db import models
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, viewsets, status, permissions
@@ -7,7 +7,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.decorators import api_view, permission_classes as dp_classes, permission_classes
+from rest_framework.decorators import api_view, permission_classes
 from django.db.models import Count, Q
 from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
@@ -19,8 +19,13 @@ from .serializers import (
     DocumentSerializer,
     CompletedApplicationSerializer,
 )
-from patients.models import Patient
+
+# --- EXTERNAL IMPORTS (Bemor hujjatlari uchun kerak) ---
+from patients.models import Patient, PatientDocument  # ✅ PatientDocument qo'shildi
+from patients.serializers import PatientDocumentSerializer  # ✅ Serializer qo'shildi
 from core.models import Stage
+
+logger = logging.getLogger(__name__)
 
 
 # ===============================================================
@@ -59,17 +64,17 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
         # 👤 Faqat bemor o'z arizalarini ko'radi
         if getattr(user, "role", "patient") == "patient" and hasattr(user, "phone_number"):
-            patient = Patient.objects.filter(phone_number=user.phone_number).first()
-            if patient:
+            try:
+                patient = Patient.objects.get(phone_number=user.phone_number)
                 qs = qs.filter(patient=patient)
+            except Patient.DoesNotExist:
+                return Application.objects.none()
 
         return qs.prefetch_related("documents")
 
     def get_serializer_context(self):
         """
-        ✅ QOSHILDI - Request kontekstni serializer'ga uzatish
-
-        Bu metod DocumentSerializer ichida file_url ni to'g'ri generatsiya qilish uchun kerak
+        Request kontekstni serializer'ga uzatish
         """
         context = super().get_serializer_context()
         context['request'] = self.request
@@ -80,7 +85,8 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         operation_description="Arizalarni filter va pagination bilan olish",
         manual_parameters=[
             openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Qidirish"),
-            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING, enum=["all", "new", "in_progress", "completed", "rejected"], description="Status filter"),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              enum=["all", "new", "in_progress", "completed", "rejected"], description="Status filter"),
             openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Sana (YYYY-MM-DD)"),
             openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Bemor ID"),
             openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
@@ -128,7 +134,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
 
 # ===============================================================
-# 👤 PATIENT ID BO'YICHA ARIZALAR
+# 👤 PATIENT ID BO'YICHA ARIZALAR + HUJJATLAR (YANGILANGAN QISM)
 # ===============================================================
 class ApplicationPagination(PageNumberPagination):
     page_size = 20
@@ -138,10 +144,9 @@ class ApplicationPagination(PageNumberPagination):
 
 class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    👤 Bemorning barcha arizalarini ko'rish
-    - GET /applications/patient/{patient_id}/ - Arizalar
-    - Filter: status, search, date
-    - Pagination
+    👤 Bemorning barcha arizalarini VA shaxsiy hujjatlarini ko'rish
+    - GET /applications/patient/{patient_id}/
+    - Response: { "results": [...arizalar], "patient_documents": [...hujjatlar] }
     """
     serializer_class = ApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -166,14 +171,14 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return context
 
     @swagger_auto_schema(
-        operation_summary="Bemorning arizalari",
-        operation_description="Bemor ID bo'yicha barcha arizalar",
+        operation_summary="Bemorning arizalari va hujjatlari",
+        operation_description="Bemor ID bo'yicha barcha arizalar va uning shaxsiy hujjatlari (pasport va h.k.)",
         manual_parameters=[
             openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Status filter"),
             openapi.Parameter('page', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
             openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Elementlar soni"),
         ],
-        responses={200: ApplicationSerializer(many=True)},
+        responses={200: "Arizalar va Hujjatlar"},
         tags=["patient-applications"]
     )
     def list(self, request, patient_id=None):
@@ -183,38 +188,42 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        queryset = self.get_queryset()
+        # 1. Bemor mavjudligini tekshirish
+        if not Patient.objects.filter(id=patient_id).exists():
+            return Response(
+                {"detail": f"Bemor ID {patient_id} topilmadi"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        if not queryset.exists():
-            if not Patient.objects.filter(id=patient_id).exists():
-                return Response(
-                    {"detail": f"Bemor ID {patient_id} topilmadi"},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            else:
-                return Response(
-                    {
-                        "count": 0,
-                        "next": None,
-                        "previous": None,
-                        "results": []
-                    },
-                    status=status.HTTP_200_OK
-                )
+        queryset = self.get_queryset()
 
         # Status filter
         status_filter = request.query_params.get('status')
         if status_filter and status_filter.lower() != 'all':
             queryset = queryset.filter(status=status_filter.lower())
 
+        # ✅ YANGI QISM: Bemorning shaxsiy hujjatlarini (PatientDocument) olish
+        # Bu yerda biz Application'ga bog'lanmagan, to'g'ridan-to'g'ri bemor profilidagi hujjatlarni olamiz
+        patient_docs = PatientDocument.objects.filter(patient_id=patient_id).order_by('-uploaded_at')
+        docs_serializer = PatientDocumentSerializer(patient_docs, many=True, context={'request': request})
+
         # Pagination
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            response = self.get_paginated_response(serializer.data)
+
+            # 🔥 RESPONSE ICHIGA HUJJATLARNI QO'SHISH
+            response.data['patient_documents'] = docs_serializer.data
+            return response
 
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+
+        # Pagination ishlamagan taqdirda ham formatni saqlash
+        return Response({
+            "results": serializer.data,
+            "patient_documents": docs_serializer.data
+        })
 
 
 # ===============================================================
@@ -223,8 +232,6 @@ class PatientApplicationViewSet(viewsets.ReadOnlyModelViewSet):
 class UploadApplicationDocumentView(generics.CreateAPIView):
     """
     ✅ Arizaga hujjat yuklash
-
-    POST /applications/{application_id}/documents/
     """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -266,9 +273,6 @@ class UploadApplicationDocumentView(generics.CreateAPIView):
 class DocumentListCreateView(generics.ListCreateAPIView):
     """
     ✅ Arizaning hujjatlari ro'yxati va yangi hujjat yuklash
-
-    GET /applications/{application_id}/documents/ - Hujjatlar ro'yxati
-    POST /applications/{application_id}/documents/ - Yangi hujjat yuklash
     """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -281,8 +285,6 @@ class DocumentListCreateView(generics.ListCreateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Arizaning hujjatlari ro'yxati",
-        operation_description="Arizaga biriktirilgan hujjatlar",
-        responses={200: DocumentSerializer(many=True)},
         tags=["applications"]
     )
     def get(self, request, *args, **kwargs):
@@ -290,7 +292,6 @@ class DocumentListCreateView(generics.ListCreateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Arizaga hujjat yuklash",
-        operation_description="Yangi hujjat biriktirish",
         consumes=["multipart/form-data"],
         manual_parameters=[
             openapi.Parameter("file", openapi.IN_FORM, type=openapi.TYPE_FILE, required=True, description="Fayl"),
@@ -329,16 +330,14 @@ class ChangeApplicationStageView(APIView):
 
     @swagger_auto_schema(
         operation_summary="Bosqichni o'zgartirish",
-        operation_description="Ariza bosqichini yangilash",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["new_stage_id"],
             properties={
-                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi bosqich ID"),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh"),
+                "new_stage_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING),
             },
         ),
-        responses={200: "Bosqich o'zgartirildi"},
         tags=["applications"],
     )
     def patch(self, request, application_id):
@@ -414,16 +413,13 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @swagger_auto_schema(
         operation_summary="Tugatilgan arizalar",
-        operation_description="Tugatilgan yoki rad etilgan arizalar",
         manual_parameters=[
             openapi.Parameter("search", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Qidirish"),
-            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING, enum=["all", "completed", "rejected"], description="Status"),
+            openapi.Parameter("status", openapi.IN_QUERY, type=openapi.TYPE_STRING,
+                              enum=["all", "completed", "rejected"], description="Status"),
             openapi.Parameter("date", openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Sana"),
             openapi.Parameter("patient_id", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Bemor ID"),
-            openapi.Parameter("page", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Sahifa"),
-            openapi.Parameter("page_size", openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description="Elementlar soni"),
         ],
-        responses={200: CompletedApplicationSerializer(many=True)},
         tags=["applications"],
     )
     def list(self, request, *args, **kwargs):
@@ -439,8 +435,6 @@ class CompletedApplicationViewSet(viewsets.ReadOnlyModelViewSet):
 
     @swagger_auto_schema(
         operation_summary="Bitta tugatilgan ariza",
-        operation_description="Tugatilgan ariza tafsilotlari",
-        responses={200: CompletedApplicationSerializer()},
         tags=["applications"],
     )
     def retrieve(self, request, *args, **kwargs):
@@ -463,16 +457,14 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
 
     @swagger_auto_schema(
         operation_summary="Status o'zgartirish",
-        operation_description="Ariza statusini completed yoki rejected ga o'zgartirish",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["status"],
             properties={
-                "status": openapi.Schema(type=openapi.TYPE_STRING, enum=["completed", "rejected"], description="Yangi status"),
-                "final_conclusion": openapi.Schema(type=openapi.TYPE_STRING, description="Yakuniy xulosa"),
+                "status": openapi.Schema(type=openapi.TYPE_STRING, enum=["completed", "rejected"]),
+                "final_conclusion": openapi.Schema(type=openapi.TYPE_STRING),
             },
         ),
-        responses={200: "Status o'zgartirildi"},
         tags=["applications"],
     )
     def patch(self, request, *args, **kwargs):
@@ -501,12 +493,11 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
 
 
 # ===============================================================
-# ✅ YANGI - STATISTICS API
+# ✅ STATISTICS API
 # ===============================================================
 @swagger_auto_schema(
     method='get',
     operation_summary="Arizalar statistikasi",
-    operation_description="Arizalar soni status bo'yicha",
     responses={200: "Statistika ma'lumotlari"},
     tags=["statistics"]
 )
@@ -514,12 +505,9 @@ class ChangeApplicationStatusView(generics.UpdateAPIView):
 @permission_classes([permissions.IsAuthenticated])
 def application_statistics(request):
     """
-    ✅ TO'G'RILANGAN - Arizalar statistikasi
-
-    GET /api/applications/statistics/
+    Arizalar statistikasi
     """
     try:
-        # ✅ aggregate() ishlatish
         stats = Application.objects.aggregate(
             jami=Count('id'),
             yangi=Count('id', filter=Q(status='new')),
@@ -527,11 +515,9 @@ def application_statistics(request):
             yakunlangan=Count('id', filter=Q(status='completed')),
             rad_etilgan=Count('id', filter=Q(status='rejected')),
         )
-
         return Response(stats, status=status.HTTP_200_OK)
 
     except Exception as e:
-        # Debug
         import traceback
         print(f"Statistics xatosi: {str(e)}")
         print(traceback.format_exc())
@@ -540,6 +526,3 @@ def application_statistics(request):
             {'detail': f'Xato: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-
-
