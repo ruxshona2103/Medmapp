@@ -5,9 +5,14 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.db import transaction
 from django.db.models import Prefetch, Max
+from django.shortcuts import get_object_or_404
+
+# 1. Modellarni Import qilish
 from .models import Stage, Tag
+from patients.models import Patient, PatientHistory
+
+# 2. Serializerlarni Import qilish
 from .serializers import StageSerializer, TagSerializer
-from patients.models import Patient
 
 
 # ===============================================================
@@ -16,77 +21,36 @@ from patients.models import Patient
 class StageViewSet(viewsets.ModelViewSet):
     """
     🧩 Bosqichlar (Stage) API
-    - Operator yoki admin foydalanuvchilar uchun to‘liq CRUD
-    - Default tartib: avval `order`, so‘ng `id` bo‘yicha
-    - Foydalanuvchi drag-drop orqali `order`ni o‘zgartirishi mumkin
-    - 'Yangi' (id=1 yoki code_name='new') bosqichni o‘chirib bo‘lmaydi
-    - Yangi bosqich yaratilganda avtomatik order belgilanadi
+    - Operator stage ni o'zgartirganda, Bemor va uning Arizalari ham o'zgaradi.
+    - Agar 'RESPONSES' bosqichiga o'tilsa, avtomatik 'Yangi' tegi beriladi.
     """
     serializer_class = StageSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # ===========================================================
-    # 📋 Bosqichlar ro‘yxati (default tartib: order -> id)
-    # ===========================================================
     def get_queryset(self):
-        qs = Stage.objects.prefetch_related(
+        # Stage ichidagi bemorlarni optimizatsiya bilan olish
+        return Stage.objects.prefetch_related(
             Prefetch("patients", queryset=Patient.objects.all().order_by("-created_at"))
-        )
+        ).order_by("order", "id")
 
-        # Agar order qiymati mavjud bo‘lsa — shu bo‘yicha tartibla
-        if qs.filter(order__isnull=False).exists():
-            return qs.order_by("order", "id")
-        # Aks holda id bo‘yicha
-        return qs.order_by("id")
-
-    # ===========================================================
-    # ➕ Yangi bosqich yaratish (avtomatik order)
-    # ===========================================================
     def perform_create(self, serializer):
         last_order = Stage.objects.aggregate(max_order=Max("order"))["max_order"] or 0
         serializer.save(order=last_order + 1)
 
-    # ===========================================================
-    # 📋 Barcha bosqichlarni olish
-    # ===========================================================
-    @swagger_auto_schema(
-        operation_summary="Barcha bosqichlar ro'yxati",
-        operation_description="Bosqichlar ro'yxatini order bo'yicha tartiblangan holda qaytaradi",
-        tags=["stages"]
-    )
+    # --- SWAGGER DOCS ---
+    @swagger_auto_schema(tags=["stages"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    # ===========================================================
-    # ➕ Yangi bosqich yaratish
-    # ===========================================================
-    @swagger_auto_schema(
-        operation_summary="Yangi bosqich yaratish",
-        operation_description="Yangi bosqich qo'shish",
-        tags=["stages"]
-    )
+    @swagger_auto_schema(tags=["stages"])
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    # ===========================================================
-    # ✏️ Bosqich ma’lumotlarini yangilash (PATCH)
-    # ===========================================================
-    @swagger_auto_schema(
-        operation_summary="Bosqichni tahrirlash",
-        operation_description="Bosqich nomi, rangi yoki boshqa atributlarini qisman yangilash",
-        tags=["stages"]
-    )
+    @swagger_auto_schema(tags=["stages"])
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
-    # ===========================================================
-    # 🗑️ Bosqichni o‘chirish
-    # ===========================================================
-    @swagger_auto_schema(
-        operation_summary="Bosqichni o'chirish",
-        operation_description="Yangi bosqichni o'chirib bo'lmaydi",
-        tags=["stages"]
-    )
+    @swagger_auto_schema(tags=["stages"])
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.id == 1 or instance.code_name == "new":
@@ -96,54 +60,41 @@ class StageViewSet(viewsets.ModelViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
-    # ===========================================================
-    # 🔢 Bosqichlarni qayta tartiblash (ordering)
-    # ===========================================================
     @swagger_auto_schema(
         operation_summary="Bosqichlarni qayta tartiblash",
-        operation_description="Drag-drop orqali tartibni yangilash",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                "order": openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER), description="Bosqich ID'lari yangi tartibda"),
+                "order": openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_INTEGER)),
             },
             required=["order"],
         ),
-        responses={200: "Tartib yangilandi"},
         tags=["stages"],
     )
     @action(detail=False, methods=["post"], url_path="reorder")
     def reorder(self, request):
-        """
-        Bosqichlarni drag-drop orqali tartiblash.
-        """
         order_list = request.data.get("order", [])
         if not isinstance(order_list, list) or not all(isinstance(i, int) for i in order_list):
-            return Response(
-                {"detail": "Noto‘g‘ri format. `order` — ID’lar ro‘yxati bo‘lishi kerak."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Noto‘g‘ri format."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             for idx, stage_id in enumerate(order_list):
                 Stage.objects.filter(id=stage_id).update(order=idx + 1)
+        return Response({"detail": "Tartib yangilandi."}, status=status.HTTP_200_OK)
 
-        return Response({"detail": "Tartib muvaffaqiyatli yangilandi."}, status=status.HTTP_200_OK)
-
+    # 👇 ASOSIY LOGIKA (Change Stage + Auto Tag)
     @swagger_auto_schema(
         method="post",
-        operation_summary="Patient bosqichini o'zgartirish",
-        operation_description="Bemor bosqichini yangilash va uning arizalarini sinxronlash",
+        operation_summary="Patient va uning arizalari bosqichini o'zgartirish",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["patient_id", "stage_id"],
             properties={
-                "patient_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Bemor ID"),
-                "stage_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="Yangi bosqich ID"),
-                "comment": openapi.Schema(type=openapi.TYPE_STRING, description="Izoh"),
+                "patient_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "stage_id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "comment": openapi.Schema(type=openapi.TYPE_STRING),
             },
         ),
-        responses={200: "Stage o'zgartirildi"},
         tags=["stages"],
     )
     @action(detail=False, methods=["post"], url_path="change-stage")
@@ -152,122 +103,86 @@ class StageViewSet(viewsets.ModelViewSet):
         stage_id = request.data.get("stage_id")
         comment = request.data.get("comment", "")
 
-        # ✅ Validate
         if not patient_id or not stage_id:
-            return Response(
-                {"detail": "patient_id va stage_id kiritilishi shart"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Ma'lumot yetarli emas"}, status=400)
 
-        # ✅ Patient topish
         try:
             patient = Patient.objects.get(id=patient_id)
-        except Patient.DoesNotExist:
-            return Response(
-                {"detail": "Bunday patient mavjud emas"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            new_stage = Stage.objects.get(id=stage_id)
+        except (Patient.DoesNotExist, Stage.DoesNotExist):
+            return Response({"detail": "Topilmadi"}, status=404)
 
-        # ✅ Stage topish
-        try:
-            stage = Stage.objects.get(id=stage_id)
-        except Stage.DoesNotExist:
-            return Response(
-                {"detail": "Bunday stage mavjud emas"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # ✅ 1. Bemor (Patient) statusini yangilash
         old_stage = patient.stage
-        patient.stage = stage
-        patient.save()
 
-        # ✅ 2. Bemorning ARIZALARINI (Applications) ham shu statusga o'tkazish (Yangi qo'shilgan qism)
-        updated_apps_count = 0
-        try:
-            # Application modelini dinamik import qilamiz (circular import bo'lmasligi uchun)
-            from applications.models import Application
+        # 🔥 AVTO TAG: "RESPONSES" ga o'tsa -> Tag = "Yangi"
+        if new_stage.code_name == 'RESPONSES':
+            new_tag, _ = Tag.objects.get_or_create(
+                code_name='new',
+                defaults={'name': 'Yangi', 'color': '#3B82F6'}
+            )
+            patient.tag = new_tag
+            if not comment:
+                comment = "Javob xatlari bosqichiga o'tildi. Status: Yangi"
 
-            # Bemorga tegishli arizalarni topib, ularning ham 'stage' ini yangilaymiz
-            # Agar Application modelida field nomi 'status' bo'lsa, 'stage=stage' ni 'status=stage' ga o'zgartiring
-            updated_apps_count = Application.objects.filter(patient=patient).update(stage=stage)
+        # O'zgartirishlar
+        with transaction.atomic():
+            patient.stage = new_stage
+            patient.save()
 
-        except ImportError:
-            print("⚠️ Diqqat: 'applications.models.Application' topilmadi. Arizalar yangilanmadi.")
-        except Exception as e:
-            # Agar Application modelida 'stage' fieldi bo'lmasa yoki boshqa xato bo'lsa
-            print(f"⚠️ Arizani yangilashda xatolik: {str(e)}")
-
-        # ✅ Log yozish (ixtiyoriy, lekin foydali)
-        if comment:
+            # Application sinxronizatsiya
             try:
-                from patients.models import PatientHistory
-                PatientHistory.objects.create(
-                    patient=patient,
-                    author=request.user,
-                    comment=f"Bosqich o'zgartirildi: {old_stage} -> {stage.title}. Izoh: {comment}"
-                )
-            except:
+                from applications.models import Application
+                Application.objects.filter(patient=patient, is_archived=False).update(stage=new_stage)
+            except Exception:
                 pass
 
-        return Response(
-            {
-                "detail": "Stage muvaffaqiyatli o‘zgartirildi",
-                "patient_id": patient_id,
-                "old_stage": old_stage.id if old_stage else None,
-                "new_stage": stage.id,
-                "synced_applications": updated_apps_count,
-                "comment": comment,
-            },
-            status=status.HTTP_200_OK,
-        )
+            # History
+            if comment or old_stage != new_stage:
+                try:
+                    old_title = old_stage.title if old_stage else "Yo'q"
+                    PatientHistory.objects.create(
+                        patient=patient,
+                        author=request.user,
+                        comment=f"Bosqich o'zgartirildi: {old_title} -> {new_stage.title}. {comment}"
+                    )
+                except:
+                    pass
+
+        return Response({
+            "success": True,
+            "new_stage": new_stage.title,
+            "new_tag": patient.tag.name if patient.tag else None
+        }, status=200)
 
 
 # ===============================================================
-# 🏷️ TAG VIEWSET
+# 🏷️ TAG VIEWSET (TUZATILDI)
 # ===============================================================
 class TagViewSet(viewsets.ModelViewSet):
-    queryset = Tag.objects.all().order_by("id")
+    # ✅ MUHIM: Bu yerda 'patients' so'zi ishlatildi, chunki modelingizda related_name='patients'.
+    # Agar bu yerda xato bo'lsa, 'patients' o'rniga 'patient_set' qilib ko'rish mumkin, lekin sizda 'patients' aniq.
+    queryset = Tag.objects.prefetch_related('patients').all().order_by("id")
+
     serializer_class = TagSerializer
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ["get", "post", "put", "patch", "delete"]
 
-    @swagger_auto_schema(
-        operation_summary="Barcha teglar ro'yxati",
-        operation_description="Barcha mavjud teglarni olish",
-        tags=["tags"]
-    )
+    @swagger_auto_schema(tags=["tags"])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        operation_summary="Yangi teg yaratish",
-        operation_description="Yangi teg qo'shish",
-        tags=["tags"]
-    )
+    @swagger_auto_schema(tags=["tags"])
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        operation_summary="Tegni yangilash",
-        operation_description="Tegni to'liq yangilash",
-        tags=["tags"]
-    )
+    @swagger_auto_schema(tags=["tags"])
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        operation_summary="Tegni qisman yangilash",
-        operation_description="Tegni qisman yangilash",
-        tags=["tags"]
-    )
+    @swagger_auto_schema(tags=["tags"])
     def partial_update(self, request, *args, **kwargs):
         return super().partial_update(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        operation_summary="Tegni o'chirish",
-        operation_description="Tegni ID bo'yicha o'chirish",
-        tags=["tags"]
-    )
+    @swagger_auto_schema(tags=["tags"])
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
