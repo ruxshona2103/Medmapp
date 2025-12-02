@@ -69,7 +69,6 @@ class StageSerializer(serializers.ModelSerializer):
 
 # =========================================================
 # 5. TAG SERIALIZER (ENG PASTDA BO'LISHI SHART)
-# =========================================================
 class TagSerializer(serializers.ModelSerializer):
     # ✅ Patient modelida related_name="patients" bo'lgani uchun avtomatik ishlaydi
     patients = PatientInTagSerializer(many=True, read_only=True)
