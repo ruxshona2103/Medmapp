@@ -24,6 +24,7 @@ class Tag(models.Model):
     """
     name = models.CharField(max_length=64, unique=True)
     color = models.CharField(max_length=32, default="default")
+    code_name = models.CharField(max_length=30, default="default")
 
     class Meta:
         ordering = ["id"]
