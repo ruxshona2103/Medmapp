@@ -1,11 +1,23 @@
 from rest_framework import serializers
-from partners.models import PartnerResponseDocument
+from django.conf import settings
+
+# 1. Modellarni import qilish
 from .models import Stage, Tag
 from patients.models import Patient
-
+# Agar PartnerResponseDocument partners appida bo'lsa:
+from partners.models import PartnerResponseDocument
 
 # =========================================================
-# 🧾 Partner yuborgan fayllar
+# 1. BEMOR SERIALIZER (TAG UCHUN) - ENG TEPADA
+# =========================================================
+class PatientInTagSerializer(serializers.ModelSerializer):
+    """Tag ichida ko'rinadigan qisqacha bemor ma'lumotlari"""
+    class Meta:
+        model = Patient
+        fields = ["id", "full_name", "phone_number", "created_at"]
+
+# =========================================================
+# 2. PARTNER HUJJAT SERIALIZER
 # =========================================================
 class PartnerResponseDocumentMiniSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
@@ -21,9 +33,8 @@ class PartnerResponseDocumentMiniSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.file.url)
         return None
 
-
 # =========================================================
-# 🧍 Stage ichidagi bemorlar (javob xatlari bilan)
+# 3. STAGE UCHUN BEMOR SERIALIZER
 # =========================================================
 class PatientInStageSerializer(serializers.ModelSerializer):
     responses = serializers.SerializerMethodField()
@@ -40,29 +51,30 @@ class PatientInStageSerializer(serializers.ModelSerializer):
         ]
 
     def get_responses(self, obj):
-        """Agar RESPONSES bosqichida bo‘lsa — partner fayllarini chiqaradi"""
         request = self.context.get("request")
+        # Bemorni javob xatlarini olish
         response_docs = PartnerResponseDocument.objects.filter(patient=obj).select_related("partner")
         return PartnerResponseDocumentMiniSerializer(response_docs, many=True, context={"request": request}).data
 
-
 # =========================================================
-# 🧩 Stage serializer
+# 4. STAGE SERIALIZER
 # =========================================================
 class StageSerializer(serializers.ModelSerializer):
-    patients = PatientInStageSerializer(many=True, read_only=True)  # 🆕 Shu joy muhim
+    patients = PatientInStageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Stage
         fields = ["id", "title", "order", "color", "code_name", "patients"]
         ref_name = "CoreStageSerializer"
 
-
 # =========================================================
-# 🏷️ Teglar
+# 5. TAG SERIALIZER (ENG PASTDA BO'LISHI SHART)
 # =========================================================
 class TagSerializer(serializers.ModelSerializer):
+    # ✅ Patient modelida related_name="patients" bo'lgani uchun avtomatik ishlaydi
+    patients = PatientInTagSerializer(many=True, read_only=True)
+
     class Meta:
         model = Tag
-        fields = ["id", "name", "color"]
+        fields = ["id", "name", "code_name", "color", "patients"]
         ref_name = "CoreTagSerializer"
