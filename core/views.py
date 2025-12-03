@@ -5,13 +5,9 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.db import transaction
 from django.db.models import Prefetch, Max
-from django.shortcuts import get_object_or_404
 
-# 1. Modellarni Import qilish
 from .models import Stage, Tag
 from patients.models import Patient, PatientHistory
-
-# 2. Serializerlarni Import qilish
 from .serializers import StageSerializer, TagSerializer
 
 
@@ -159,8 +155,6 @@ class StageViewSet(viewsets.ModelViewSet):
 # 🏷️ TAG VIEWSET (TUZATILDI)
 # ===============================================================
 class TagViewSet(viewsets.ModelViewSet):
-    # ✅ MUHIM: Bu yerda 'patients' so'zi ishlatildi, chunki modelingizda related_name='patients'.
-    # Agar bu yerda xato bo'lsa, 'patients' o'rniga 'patient_set' qilib ko'rish mumkin, lekin sizda 'patients' aniq.
     queryset = Tag.objects.prefetch_related('patients').all().order_by("id")
 
     serializer_class = TagSerializer
