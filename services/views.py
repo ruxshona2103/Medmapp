@@ -134,9 +134,10 @@ class VisaCreateView(generics.CreateAPIView):
         return super().post(request, *args, **kwargs)
 
 
-class VisaRetrieveView(generics.RetrieveAPIView):
+class VisaRetrieveView(generics.RetrieveUpdateAPIView):
     serializer_class = VisaRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
+    parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
         # Swagger schema generation uchun
@@ -152,6 +153,26 @@ class VisaRetrieveView(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Visa so'rovini yangilash",
+        operation_description="Visa so'rovini yangilash (tags, note)",
+        tags=["visa"],
+        request_body=VisaRequestSerializer,
+        responses={200: VisaRequestSerializer()},
+    )
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Visa so'rovini to'liq yangilash",
+        operation_description="Visa so'rovini to'liq yangilash",
+        tags=["visa"],
+        request_body=VisaRequestSerializer,
+        responses={200: VisaRequestSerializer()},
+    )
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
 
 
 class TransferCreateView(generics.CreateAPIView):
@@ -175,9 +196,10 @@ class TransferCreateView(generics.CreateAPIView):
         return super().post(request, *args, **kwargs)
 
 
-class TransferRetrieveView(generics.RetrieveAPIView):
+class TransferRetrieveView(generics.RetrieveUpdateAPIView):
     serializer_class = TransferRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
+    parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
         # Swagger schema generation uchun
@@ -193,6 +215,16 @@ class TransferRetrieveView(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Transfer so'rovini yangilash",
+        operation_description="Transfer so'rovini yangilash (tags)",
+        tags=["transfer"],
+        request_body=TransferRequestSerializer,
+        responses={200: TransferRequestSerializer()},
+    )
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
 
 
 class BookingViewSet(viewsets.ModelViewSet):
@@ -258,7 +290,7 @@ class TranslatorCreateView(generics.CreateAPIView):
         return super().post(request, *args, **kwargs)
 
 
-class TranslatorRetrieveView(generics.RetrieveAPIView):
+class TranslatorRetrieveView(generics.RetrieveUpdateAPIView):
     serializer_class = TranslatorRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
@@ -276,6 +308,16 @@ class TranslatorRetrieveView(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="Tarjimon so'rovini yangilash",
+        operation_description="Tarjimon so'rovini yangilash (tags, requirements)",
+        tags=["translator"],
+        request_body=TranslatorRequestSerializer,
+        responses={200: TranslatorRequestSerializer()},
+    )
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
 
 
 class SimCardCreateView(generics.CreateAPIView):
@@ -299,9 +341,10 @@ class SimCardCreateView(generics.CreateAPIView):
         return super().post(request, *args, **kwargs)
 
 
-class SimCardRetrieveView(generics.RetrieveAPIView):
+class SimCardRetrieveView(generics.RetrieveUpdateAPIView):
     serializer_class = SimCardRequestSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
+    parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
         # Swagger schema generation uchun
@@ -318,14 +361,27 @@ class SimCardRetrieveView(generics.RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
+    @swagger_auto_schema(
+        operation_summary="SIM karta buyurtmasini yangilash",
+        operation_description="SIM karta buyurtmasini yangilash (tags, note)",
+        tags=["simcard"],
+        request_body=SimCardRequestSerializer,
+        responses={200: SimCardRequestSerializer()},
+    )
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from django.db import transaction
 
 from applications.models import Patient
+from core.models import Tag
 from services.models import (
     VisaRequest, TransferRequest, TranslatorRequest, SimCardRequest, Booking
 )
