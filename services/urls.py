@@ -11,9 +11,11 @@ from .views import (
     TranslatorRetrieveView,
     SimCardCreateView,
     SimCardRetrieveView,
-    OrdersMeView,  # Qo‘shilishi kerak
-    OrdersListView, PatientOrdersDetailView,  # Qo‘shilishi kerak
+    OrdersMeView,
+    OrdersListView,
+    PatientOrdersDetailView,
 )
+from .bulk_views import BulkUpdateTagsView, TagManagementView
 
 router = DefaultRouter()
 router.register(r"hotels", HotelViewSet, basename="hotel")
@@ -42,4 +44,11 @@ urlpatterns = [
     path('orders/me/', OrdersMeView.as_view(), name='orders-me'),
     path('orders/', OrdersListView.as_view(), name='orders-list'),
     path('orders/<int:id>/', PatientOrdersDetailView.as_view(), name='orders-by-patient'),
+
+    # --- BULK OPERATIONS ---
+    path('orders/bulk-update-tags/', BulkUpdateTagsView.as_view(), name='bulk-update-tags'),
+
+    # --- TAG MANAGEMENT ---
+    path('tags/<int:tag_id>/assign-items/', TagManagementView.as_view(), name='tag-assign-items'),
+    path('tags/<int:tag_id>/remove-items/', TagManagementView.as_view(), name='tag-remove-items'),
 ]
