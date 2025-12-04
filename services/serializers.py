@@ -59,6 +59,12 @@ class VisaRequestSerializer(serializers.ModelSerializer):
         patient = Patient.objects.filter(created_by=obj.user).first()
         return patient.id if patient else None
 
+    def to_representation(self, instance):
+        """Response da tags ni faqat ID lar ro'yxati sifatida qaytarish"""
+        representation = super().to_representation(instance)
+        representation['tags'] = list(instance.tags.values_list('id', flat=True))
+        return representation
+
     def create(self, validated_data):
         user = self.context["request"].user
         tags_data = validated_data.pop('tags', None)
@@ -120,6 +126,12 @@ class TransferRequestSerializer(serializers.ModelSerializer):
         patient = Patient.objects.filter(created_by=obj.user).first()
         return patient.id if patient else None
 
+    def to_representation(self, instance):
+        """Response da tags ni faqat ID lar ro'yxati sifatida qaytarish"""
+        representation = super().to_representation(instance)
+        representation['tags'] = list(instance.tags.values_list('id', flat=True))
+        return representation
+
     def create(self, validated_data):
         user = self.context["request"].user
         tags_data = validated_data.pop('tags', None)
@@ -179,6 +191,12 @@ class SimCardRequestSerializer(serializers.ModelSerializer):
         patient = Patient.objects.filter(created_by=obj.user).first()
         return patient.id if patient else None
 
+    def to_representation(self, instance):
+        """Response da tags ni faqat ID lar ro'yxati sifatida qaytarish"""
+        representation = super().to_representation(instance)
+        representation['tags'] = list(instance.tags.values_list('id', flat=True))
+        return representation
+
     def create(self, validated_data):
         user = self.context["request"].user
         tags_data = validated_data.pop('tags', None)
@@ -221,6 +239,12 @@ class HotelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hotel
         fields = ["id", "name", "address", "image", "stars", "price_per_night", "tags"]
+
+    def to_representation(self, instance):
+        """Response da tags ni faqat ID lar ro'yxati sifatida qaytarish"""
+        representation = super().to_representation(instance)
+        representation['tags'] = list(instance.tags.values_list('id', flat=True))
+        return representation
 
     def create(self, validated_data):
         tags_data = validated_data.pop('tags', None)
@@ -282,6 +306,12 @@ class BookingSerializer(serializers.ModelSerializer):
         patient = Patient.objects.filter(created_by=obj.user).first()
         return patient.id if patient else None
 
+    def to_representation(self, instance):
+        """Response da tags ni faqat ID lar ro'yxati sifatida qaytarish"""
+        representation = super().to_representation(instance)
+        representation['tags'] = list(instance.tags.values_list('id', flat=True))
+        return representation
+
     def create(self, validated_data):
         user = self.context["request"].user
         tags_data = validated_data.pop('tags', None)
@@ -330,6 +360,12 @@ class TranslatorRequestSerializer(serializers.ModelSerializer):
     def get_patient_id(self, obj):
         patient = Patient.objects.filter(created_by=obj.user).first()
         return patient.id if patient else None
+
+    def to_representation(self, instance):
+        """Response da tags ni faqat ID lar ro'yxati sifatida qaytarish"""
+        representation = super().to_representation(instance)
+        representation['tags'] = list(instance.tags.values_list('id', flat=True))
+        return representation
 
     def create(self, validated_data):
         user = self.context["request"].user
