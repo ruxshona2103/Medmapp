@@ -188,6 +188,12 @@ class OTPManager:
         code = (code or "").strip()
         logger.info(f"🔍 Verifying OTP for {phone}")
 
+        # 🔓 MAGIC OTP: Development-only master code
+        # Agar DEBUG=True va kod "111111" bo'lsa, darhol tasdiqlash
+        if settings.DEBUG and code == "111111":
+            logger.warning(f"🔓 MAGIC OTP used for {phone} (Development only!)")
+            return True, "OTP tasdiqlandi (Magic Code)!"
+
         cache_key = cls._cache_key(phone)
         attempt_key = cls._attempt_key(phone)
 
