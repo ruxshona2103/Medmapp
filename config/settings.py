@@ -37,7 +37,7 @@ def get_list(text):
     return [item.strip() for item in text.split(",")]
 
 
-ALLOWED_HOSTS = get_list(os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost"))
+ALLOWED_HOSTS = get_list(os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost,0.0.0.0"))
 
 # ===============================================================
 # 4. INSTALLED APPS
