@@ -156,13 +156,16 @@ class OtpRequestSerializer(serializers.Serializer):
         except Exception as e:
             logger.error(f"❌ SMS sending error for {phone}: {e}")
 
-            # SMS failed - cleanup OTP using CORRECT method name
-            OTPManager._cleanup_specific_otp(phone)  # ✅ FIXED: was _cleanup_otp
-
-            # Always raise error if SMS fails (even in DEBUG)
-            raise serializers.ValidationError(
-                "SMS yuborishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
-            )
+            # DEBUG rejimda SMS xatolik muhim emas - OTP ni saqlab qolamiz
+            if settings.DEBUG:
+                logger.warning(f"⚠️ SMS failed but DEBUG=True, keeping OTP for {phone}")
+                # OTP ni saqlaymiz, faqat warning beramiz
+            else:
+                # Production da SMS failed bo'lsa, OTP ni o'chiramiz
+                OTPManager._cleanup_specific_otp(phone)
+                raise serializers.ValidationError(
+                    "SMS yuborishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring."
+                )
 
         return {
             "message": "OTP muvaffaqiyatli yuborildi!",
