@@ -21,6 +21,12 @@ class Conversation(models.Model):
     """
     Suhbat model. Bemor va operator o'rtasidagi suhbatni ifodalaydi.
     """
+    STATUS_CHOICES = (
+        ("new", "Yangi"),
+        ("in_progress", "Jarayonda"),
+        ("completed", "Yakunlangan"),
+    )
+
     title = models.CharField(max_length=255, blank=True)
 
     # Kim yaratgan (odatda operator)
@@ -46,6 +52,7 @@ class Conversation(models.Model):
         blank=True,
     )
 
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new")
     is_active = models.BooleanField(default=True)
     last_message_at = models.DateTimeField(null=True, blank=True)
 
@@ -62,6 +69,7 @@ class Conversation(models.Model):
             models.Index(fields=["patient", "is_active"]),
             models.Index(fields=["operator", "is_active"]),
             models.Index(fields=["last_message_at"]),
+            models.Index(fields=["status"]),
         ]
 
     def __str__(self) -> str:
