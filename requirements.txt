@@ -8,11 +8,11 @@ drf-yasg==1.21.10
 drf-spectacular==0.28.0
 psycopg2-binary==2.9.10
 dj-database-url==1.2.0
-redis==4.5.5
+redis
 hiredis==2.2.3
 daphne==4.1.2
-channels==4.1.0
-gunicorn==21.2.0
+channels
+channels-redis==4.2.1
 whitenoise==6.7.0
 python-dotenv==0.19.2
 asgiref==3.9.1

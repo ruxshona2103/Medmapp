@@ -3,7 +3,7 @@ services:
     name: medmapp
     env: python
     buildCommand: "./build.sh"
-    startCommand: "gunicorn config.wsgi:application"
+    startCommand: "daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     postdeployCommand: "python manage.py migrate --noinput"
 
     envVars:

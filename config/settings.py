@@ -26,6 +26,9 @@ IS_PRODUCTION = ENVIRONMENT == "production"
 # Debug rejimi (Stringni Booleanga o'girish)
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
+# Default auto field type (W042 warning ni bartaraf qilish uchun)
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
 
 # ===============================================================
 # 3. HOSTS & SECURITY

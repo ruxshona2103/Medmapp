@@ -28,33 +28,86 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=Message)
 def update_conversation_last_message(sender, instance: Message, created, **kwargs):
+    """
+    Yangi xabar yaratilganda conversation ning last_message_at ni yangilash
+
+    Args:
+        sender: Message model class
+        instance: Message obyekti
+        created: Yangi yaratildimi
+        **kwargs: Qo'shimcha argumentlar
+    """
     if created and not instance.is_deleted:
         try:
-            Conversation.objects.filter(pk=instance.conversation_id).update(
+            updated = Conversation.objects.filter(pk=instance.conversation_id).update(
                 last_message_at=instance.created_at
             )
-        except:
-            pass
+            if updated:
+                logger.debug(
+                    f"✅ Conversation last_message_at updated | "
+                    f"Conversation: {instance.conversation_id} | "
+                    f"Message: {instance.id}"
+                )
+        except Conversation.DoesNotExist:
+            logger.error(
+                f"❌ Conversation not found | "
+                f"Conversation ID: {instance.conversation_id} | "
+                f"Message ID: {instance.id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"❌ Error updating conversation last_message | "
+                f"Message ID: {instance.id} | "
+                f"Conversation ID: {instance.conversation_id} | "
+                f"Error: {e}",
+                exc_info=True
+            )
 
 
 @receiver(post_save, sender=MessageReadStatus)
 def update_message_read_status(sender, instance: MessageReadStatus, created, **kwargs):
+    """
+    Message o'qilgan deb belgilanganida holatni yangilash
+
+    Args:
+        sender: MessageReadStatus model class
+        instance: MessageReadStatus obyekti
+        created: Yangi yaratildimi
+        **kwargs: Qo'shimcha argumentlar
+    """
     if created:
         try:
+            # Message ni o'qilgan deb belgilash
             instance.message.is_read_by_recipient = True
             instance.message.save(update_fields=["is_read_by_recipient"])
 
+            # Conversation ni yangilash
             instance.message.conversation.last_message_at = timezone.now()
             instance.message.conversation.save(update_fields=["last_message_at"])
 
+            # Participant ning last_seen_at ni yangilash
             participant = Participant.objects.filter(
                 conversation=instance.message.conversation, user=instance.user
             ).first()
             if participant:
                 participant.last_seen_at = timezone.now()
                 participant.save(update_fields=["last_seen_at"])
+
+            logger.debug(
+                f"✅ Message read status updated | "
+                f"Message: {instance.message.id} | "
+                f"User: {instance.user.id}"
+            )
+
         except Exception as e:
-            print(f"Error updating read status: {e}")
+            logger.error(
+                f"❌ Error updating read status | "
+                f"MessageReadStatus ID: {instance.id} | "
+                f"Message ID: {instance.message_id} | "
+                f"User: {instance.user.id} | "
+                f"Error: {e}",
+                exc_info=True
+            )
 
 
 @receiver(post_save, sender=Conversation)

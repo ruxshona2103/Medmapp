@@ -1,2 +1,0 @@
-# Medmapp
-start-up project

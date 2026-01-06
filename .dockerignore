@@ -43,3 +43,13 @@ docker-compose.yml
 README.md
 LICENSE
 *.md
+
+# Test files (PRODUCTION UCHUN KERAK EMAS)
+verify_security.py
+simple_chat.py
+test_client.html
+browser_test.py
+setup_test.sh
+run_test.sh
+get_test_token.sh
+get_token.py

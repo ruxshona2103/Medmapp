@@ -22,11 +22,9 @@ python manage.py collectstatic --noinput
 # echo "Creating superuser..."
 # python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@example.com', 'admin123')"
 
-# Start Gunicorn
-echo "Starting Gunicorn..."
-exec gunicorn config.wsgi:application \
-    --bind 0.0.0.0:8000 \
-    --workers 3 \
-    --timeout 120 \
-    --access-logfile - \
-    --error-logfile -
+# Start Daphne (ASGI server for HTTP + WebSocket)
+echo "Starting Daphne ASGI server..."
+exec daphne -b 0.0.0.0 -p 8000 \
+    --access-log - \
+    --proxy-headers \
+    config.asgi:application

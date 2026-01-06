@@ -22,16 +22,26 @@ Author: Senior Backend Developer (Medmapp Team)
 
 import json
 import logging
+import time
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.auth import get_user_model
+from django.utils.html import escape
+from django.core.cache import cache
 from .models import Message, Conversation
 from .serializers import MessageSerializer
 
 # Logger sozlash
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+# ============================================================
+# SECURITY CONFIGURATION
+# ============================================================
+RATE_LIMIT_MESSAGES = 5  # Maximum messages per second
+RATE_LIMIT_WINDOW = 1    # Time window in seconds
+MAX_MESSAGE_LENGTH = 5000  # Maximum message length in characters
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -160,6 +170,49 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 exc_info=True
             )
 
+    async def _check_rate_limit(self) -> bool:
+        """
+        Rate limiting tekshiruvi (5 xabar/sekund)
+
+        Returns:
+            bool: True agar limit oshgan bo'lsa, False aks holda
+
+        Cache key pattern: ws_rate_{user_id}_{conversation_id}
+        """
+        cache_key = f"ws_rate_{self.user.id}_{self.conversation_id}"
+
+        # Cache dan hozirgi request count ni olish
+        current_data = cache.get(cache_key, {"count": 0, "window_start": time.time()})
+
+        current_time = time.time()
+        window_start = current_data.get("window_start", current_time)
+        request_count = current_data.get("count", 0)
+
+        # Agar yangi window boshlangan bo'lsa, reset qilish
+        if current_time - window_start > RATE_LIMIT_WINDOW:
+            cache.set(cache_key, {
+                "count": 1,
+                "window_start": current_time
+            }, timeout=RATE_LIMIT_WINDOW + 1)
+            return False
+
+        # Limitni tekshirish
+        if request_count >= RATE_LIMIT_MESSAGES:
+            logger.warning(
+                f"⚠️ Rate limit exceeded | User: {self.user.id} | "
+                f"Conversation: {self.conversation_id} | "
+                f"Requests in window: {request_count}"
+            )
+            return True
+
+        # Count ni oshirish
+        cache.set(cache_key, {
+            "count": request_count + 1,
+            "window_start": window_start
+        }, timeout=RATE_LIMIT_WINDOW + 1)
+
+        return False
+
     async def receive(self, text_data):
         """
         Clientdan xabar qabul qilish
@@ -173,13 +226,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "type": "text"  # optional, default: "text"
             }
 
+        Security:
+        - Rate limiting: Max 5 messages/second
+        - XSS protection: HTML escaped before storage
+        - Input validation: Max 5000 characters
+
         Vazifalar:
-        1. JSON ni parse qilish
-        2. Xabarni validatsiya qilish
-        3. DB ga saqlash
-        4. Redis group ga broadcast qilish
+        1. Rate limit tekshiruvi
+        2. JSON ni parse qilish
+        3. XSS protection (HTML escape)
+        4. Xabarni validatsiya qilish
+        5. DB ga saqlash
+        6. Redis group ga broadcast qilish
         """
         try:
+            # 🔒 SECURITY: Rate Limiting
+            if await self._check_rate_limit():
+                await self.send(text_data=json.dumps({
+                    "error": "Juda ko'p so'rov. 1 soniya kuting.",
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "retry_after": RATE_LIMIT_WINDOW
+                }))
+                return
+
             # 1. JSON parsing
             data = json.loads(text_data)
             message_content = data.get("message", "").strip()
@@ -193,16 +262,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }))
                 return
 
-            if len(message_content) > 5000:  # Max 5000 characters
+            if len(message_content) > MAX_MESSAGE_LENGTH:
                 await self.send(text_data=json.dumps({
-                    "error": "Xabar juda uzun (max 5000 belgi)",
+                    "error": f"Xabar juda uzun (max {MAX_MESSAGE_LENGTH} belgi)",
                     "code": "MESSAGE_TOO_LONG"
                 }))
                 return
 
-            # 3. DB ga saqlash
+            # 🔒 SECURITY: XSS Protection - HTML escape qilish
+            # <script>alert(1)</script> → &lt;script&gt;alert(1)&lt;/script&gt;
+            message_content_safe = escape(message_content)
+
+            if message_content != message_content_safe:
+                logger.warning(
+                    f"🔒 XSS attempt detected | User: {self.user.id} | "
+                    f"Original: {message_content[:100]} | "
+                    f"Escaped: {message_content_safe[:100]}"
+                )
+
+            # 3. DB ga saqlash (escaped content bilan)
             message_obj = await self._save_message(
-                content=message_content,
+                content=message_content_safe,
                 message_type=message_type
             )
 
@@ -228,7 +308,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             logger.info(
                 f"📨 Message sent | User: {self.user.id} | "
                 f"Conversation: {self.conversation_id} | "
-                f"Message ID: {message_obj.id}"
+                f"Message ID: {message_obj.id} | "
+                f"XSS Protected: {message_content != message_content_safe}"
             )
 
         except json.JSONDecodeError:
