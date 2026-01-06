@@ -1,0 +1,171 @@
+# ============================================================
+# PRODUCTION CI/CD PIPELINE - Django + Daphne + Redis
+# ============================================================
+# 
+# Bu pipeline 3 ta bosqichdan iborat:
+# 1. Linting - Kod sifatini tekshirish
+# 2. Testing - Django testlari
+# 3. Deploy - Server ga SSH orqali deploy (Docker Hub kerak emas!)
+#
+# Kerakli GitHub Secrets:
+#   - SERVER_HOST: Server IP manzili
+#   - SERVER_USER: SSH username (masalan: root)
+#   - SERVER_SSH_KEY: SSH private key
+#
+# Author: Senior DevOps Architect
+# ============================================================
+
+name: 🚀 Production Deploy Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:  # Manual trigger
+
+env:
+  PYTHON_VERSION: "3.11"
+  PROJECT_PATH: "/opt/medmapp"
+
+# ============================================================
+# JOBS DEFINITION
+# ============================================================
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # STAGE 1: LINTING & CODE QUALITY
+  # ──────────────────────────────────────────────────────────
+  lint:
+    name: 🔍 Stage 1 - Linting & Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install linting dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort
+      
+      - name: 🔍 Run Flake8 (Linter)
+        run: |
+          echo "📋 Running Flake8 linter..."
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          echo "✅ Flake8 check completed"
+
+  # ──────────────────────────────────────────────────────────
+  # STAGE 2: TESTING
+  # ──────────────────────────────────────────────────────────
+  test:
+    name: 🧪 Stage 2 - Django Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: 🗄️ Setup test database
+        run: python manage.py migrate --no-input
+        env:
+          ENVIRONMENT: development
+          DATABASE_URL: ""
+          DEBUG: "true"
+          DJANGO_SECRET_KEY: "test-secret-key-for-ci-only"
+      
+      - name: 🧪 Run Django tests
+        run: python manage.py test --verbosity=2
+        env:
+          ENVIRONMENT: development
+          DATABASE_URL: ""
+          DEBUG: "true"
+          DJANGO_SECRET_KEY: "test-secret-key-for-ci-only"
+          REDIS_URL: "redis://localhost:6379"
+
+  # ──────────────────────────────────────────────────────────
+  # STAGE 3: DEPLOY TO PRODUCTION SERVER (Docker Hub kerak emas!)
+  # ──────────────────────────────────────────────────────────
+  deploy:
+    name: 🚀 Stage 3 - Deploy to Server
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    environment: production
+    
+    steps:
+      - name: 🔐 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "════════════════════════════════════════════════"
+            echo "🚀 MEDMAPP PRODUCTION DEPLOY BOSHLANDI"
+            echo "════════════════════════════════════════════════"
+            
+            # Project papkasiga o'tish
+            cd ${{ env.PROJECT_PATH }}
+            
+            # Oxirgi kodni olish
+            echo "📥 Git pull..."
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Docker containerlarni qayta build va ishga tushirish
+            echo "� Docker containers..."
+            docker compose down
+            docker compose build --no-cache
+            docker compose up -d
+            
+            # Eski imagelarni tozalash
+            echo "🧹 Cleanup..."
+            docker system prune -f
+            
+            # Status tekshirish
+            echo ""
+            echo "📊 Container status:"
+            docker compose ps
+            
+            echo ""
+            echo "════════════════════════════════════════════════"
+            echo "✅ DEPLOY MUVAFFAQIYATLI YAKUNLANDI!"
+            echo "🌐 WebSocket: wss://your-domain.com/ws/chat/"
+            echo "🕐 Vaqt: $(date)"
+            echo "════════════════════════════════════════════════"
+      
+      - name: � Success notification
+        run: |
+          echo "✅ Deploy completed successfully!"
+          echo "Commit: ${{ github.sha }}"
