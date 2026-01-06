@@ -100,7 +100,7 @@ jobs:
         run: python manage.py migrate --no-input
         env:
           ENVIRONMENT: development
-          DATABASE_URL: ""
+          DATABASE_URL: "sqlite:///db.sqlite3"
           DEBUG: "true"
           DJANGO_SECRET_KEY: "test-secret-key-for-ci-only"
       
@@ -108,7 +108,7 @@ jobs:
         run: python manage.py test --verbosity=2
         env:
           ENVIRONMENT: development
-          DATABASE_URL: ""
+          DATABASE_URL: "sqlite:///db.sqlite3"
           DEBUG: "true"
           DJANGO_SECRET_KEY: "test-secret-key-for-ci-only"
           REDIS_URL: "redis://localhost:6379"
